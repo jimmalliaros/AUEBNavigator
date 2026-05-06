@@ -1,76 +1,86 @@
-package com.example.auebnavigator;
+package com.example.auebnavigator; // Βάλε το δικό σου package
 
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.Vibrator;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
+import android.view.View;
+import android.widget.FrameLayout;
 import android.widget.Toast;
-
-import androidx.activity.EdgeToEdge;
-import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.graphics.Insets;
 import androidx.core.view.GestureDetectorCompat;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
 
 public class MainActivity extends AppCompatActivity {
 
-    private GestureDetectorCompat gestureDetectorCompat;
+    private FrameLayout btnMic;
+    private Vibrator vibrator;
+
+    // Προσθέτουμε τον "ανιχνευτή" χειρονομιών
+    private GestureDetectorCompat gestureDetector;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        EdgeToEdge.enable(this);
         setContentView(R.layout.activity_main);
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
-            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
-            return insets;
-        });
-        gestureDetectorCompat = new GestureDetectorCompat(this, new MyGestureListener());
 
+        vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+        btnMic = findViewById(R.id.btn_mic);
+
+        // Αρχικοποίηση του GestureDetector με την custom κλάση μας
+        gestureDetector = new GestureDetectorCompat(this, new SwipeListener());
+
+        // Click Listener για το μικρόφωνο
+        btnMic.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                handleMicClick();
+            }
+        });
     }
 
-    private class MyGestureListener extends GestureDetector.SimpleOnGestureListener{
+    // ΒΑΣΙΚΟ: Πρέπει να στέλνουμε όλα τα αγγίγματα της οθόνης στον GestureDetector
+    // για να καταλάβει πότε γίνεται swipe.
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        this.gestureDetector.onTouchEvent(event);
+        return super.onTouchEvent(event);
+    }
 
+    private void handleMicClick() {
+        if (vibrator != null && vibrator.hasVibrator()) {
+            vibrator.vibrate(50);
+        }
+        Toast.makeText(this, "Ακούω...", Toast.LENGTH_SHORT).show();
+        // TODO: Εδώ μπαίνει το SpeechRecognizer logic
+    }
+
+    // --- Η Λογική του Swiping ---
+    private class SwipeListener extends GestureDetector.SimpleOnGestureListener {
+
+        // Πόσα pixels πρέπει να διανύσει το δάχτυλο για να θεωρηθεί swipe
         private static final int SWIPE_THRESHOLD = 100;
+        // Πόσο γρήγορα πρέπει να γίνει η κίνηση
         private static final int SWIPE_VELOCITY_THRESHOLD = 100;
 
         @Override
-
-
-        public boolean onDoubleTapEvent(@NonNull MotionEvent e) {
-
-            Intent intent = new Intent(MainActivity.this, SpeakingScreen.class);
-            startActivity(intent);
-            return true;
-        }
-
         public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
             boolean result = false;
             try {
+                // Υπολογισμός της απόστασης (Τελικό σημείο e2 - Αρχικό σημείο e1)
                 float diffY = e2.getY() - e1.getY();
                 float diffX = e2.getX() - e1.getX();
 
-                // Determine if swipe is Horizontal or Vertical
+                // Ελέγχουμε αν η κίνηση ήταν κυρίως οριζόντια (άρα swipe δεξιά/αριστερά και όχι πάνω/κάτω)
                 if (Math.abs(diffX) > Math.abs(diffY)) {
-                    // Horizontal swipe
+                    // Ελέγχουμε αν το swipe ήταν αρκετά μεγάλο και γρήγορο
                     if (Math.abs(diffX) > SWIPE_THRESHOLD && Math.abs(velocityX) > SWIPE_VELOCITY_THRESHOLD) {
                         if (diffX > 0) {
-                            Intent intent = new Intent(MainActivity.this, SpeakingScreen.class);
-                            //System.out.println("Swipe Right");
+                            // Θετικό diffX = Swipe Right (από αριστερά προς δεξιά)
+                            onSwipeRight();
                         } else {
-                            System.out.println("Swipe Left");
-                        }
-                        result = true;
-                    }
-                } else {
-                    // Vertical swipe
-                    if (Math.abs(diffY) > SWIPE_THRESHOLD && Math.abs(velocityY) > SWIPE_VELOCITY_THRESHOLD) {
-                        if (diffY > 0) {
-                            System.out.println("Swipe Down");
-                        } else {
-                            System.out.println("Swipe Up");
+                            // Αρνητικό diffX = Swipe Left (από δεξιά προς αριστερά)
+                            onSwipeLeft();
                         }
                         result = true;
                     }
@@ -80,19 +90,24 @@ public class MainActivity extends AppCompatActivity {
             }
             return result;
         }
-
-
-
-
-
     }
 
-    public boolean onTouchEvent(MotionEvent event){
-        gestureDetectorCompat.onTouchEvent(event);
+    // Τι συμβαίνει όταν κάνουμε Swipe Right
+    private void onSwipeRight() {
+        // 1. Βάζουμε πάλι Haptic Feedback για να νιώσει ο χρήστης ότι το gesture έπιασε
+        if (vibrator != null && vibrator.hasVibrator()) {
+            vibrator.vibrate(30);
+        }
 
-
-        return super.onTouchEvent(event);
+        // 2. Μετάβαση στην οθόνη της Κάμερας
+        // Προσοχή: Πρέπει να έχεις φτιάξει ένα CameraActivity.java αλλιώς θα κοκκινίσει εδώ.
+        Intent intent = new Intent(MainActivity.this, CameraActivity.class);
+        startActivity(intent);
     }
 
-
+    // Τι συμβαίνει όταν κάνουμε Swipe Left
+    private void onSwipeLeft() {
+        // Μπορείς να το αφήσεις κενό προς το παρόν ή να βάλεις π.χ. τις Ρυθμίσεις (SettingsActivity)
+        Toast.makeText(this, "Swipe Left -> Ρυθμίσεις (coming soon)", Toast.LENGTH_SHORT).show();
+    }
 }

@@ -1,4 +1,4 @@
 package com.example.auebnavigator;
 
-public class CameraScreen {
+public class CameraActivity {
 }
