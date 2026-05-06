@@ -115,11 +115,29 @@ public class MainActivity extends AppCompatActivity {
             @Override public void onError(int error) {
                 Toast.makeText(MainActivity.this, "Σφάλμα: " + error, Toast.LENGTH_SHORT).show();
             }
-            @Override public void onResults(Bundle results) {
+            @Override
+            public void onResults(Bundle results) {
                 ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                 if (matches != null && !matches.isEmpty()) {
-                    String spokenText = matches.get(0);
-                    Toast.makeText(MainActivity.this, "Είπες: " + spokenText, Toast.LENGTH_LONG).show();
+                    // Παίρνουμε το επικρατέστερο αποτέλεσμα και το κάνουμε μικρά γράμματα για σωστή σύγκριση
+                    String spokenText = matches.get(0).toLowerCase();
+
+                    Log.d("Speech", "Είπες: " + spokenText);
+
+                    // Έλεγχος για λέξεις-κλειδιά που αφορούν την κάμερα
+                    if (spokenText.contains("κάμερα") || spokenText.contains("camera") ||
+                            spokenText.contains("φωτογραφία") || spokenText.contains("άνοιξε")) {
+
+                        // Ηχητική επιβεβαίωση πριν την αλλαγή οθόνης (Πολύ σημαντικό για τυφλούς!)
+                        Toast.makeText(MainActivity.this, "Ανοίγω την κάμερα...", Toast.LENGTH_SHORT).show();
+
+                        // Καλούμε τη μέθοδο που ήδη φτιάξαμε για το Swipe Right
+                        onSwipeRight();
+
+                    } else {
+                        // Αν δεν κατάλαβε, δώσε ένα feedback
+                        Toast.makeText(MainActivity.this, "Δεν κατάλαβα την εντολή: " + spokenText, Toast.LENGTH_LONG).show();
+                    }
                 }
             }
             @Override public void onPartialResults(Bundle partialResults) { }
