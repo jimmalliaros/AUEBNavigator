@@ -1,5 +1,7 @@
 package com.example.auebnavigator; // Βάλε το δικό σου package
 
+import android.media.AudioManager;
+import android.media.ToneGenerator;
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -23,7 +25,8 @@ import androidx.core.view.GestureDetectorCompat;
 import java.util.ArrayList;
 
 public class MainActivity extends AppCompatActivity {
-
+    private ToneGenerator toneGen; // for "bip"
+    private android.view.animation.Animation pulseAnim; //animation
     private FrameLayout btnMic;
     private Vibrator vibrator;
     private GestureDetectorCompat gestureDetector;
@@ -52,6 +55,11 @@ public class MainActivity extends AppCompatActivity {
                 handleMicClick();
             }
         });
+        //3. Φτιάχνουμε το animation του μικροφωνου
+        pulseAnim = android.view.animation.AnimationUtils.loadAnimation(this, R.anim.pulse);
+
+        //4. Το μπιπ Το 100 είναι η ένταση (0-100)
+        toneGen = new ToneGenerator(AudioManager.STREAM_MUSIC, 100);
     }
 
     // Στέλνουμε τα αγγίγματα στον GestureDetector
@@ -107,13 +115,29 @@ public class MainActivity extends AppCompatActivity {
         speechIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "el-GR"); // Ελληνικά
 
         speechRecognizer.setRecognitionListener(new RecognitionListener() {
-            @Override public void onReadyForSpeech(Bundle params) { Log.d("Speech", "Ready"); }
+            @Override
+            public void onReadyForSpeech(Bundle params) {
+                // Ξεκινάει το animation όταν το μικρόφωνο είναι έτοιμο
+                btnMic.startAnimation(pulseAnim);
+                // Αλλαγή εικονιδίου αν θες (π.χ. σε ένα mic_active drawable)
+                // imgMicIcon.setImageResource(R.drawable.ic_mic_active);
+
+                // 2. Παίζει το Μπιπ (TONE_PROP_BEEP είναι το κλασικό κοφτό μπιπ)
+                // Το 150 είναι η διάρκεια σε milliseconds
+                toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 150);
+            }
             @Override public void onBeginningOfSpeech() { }
             @Override public void onRmsChanged(float rmsdB) { }
             @Override public void onBufferReceived(byte[] buffer) { }
-            @Override public void onEndOfSpeech() { Log.d("Speech", "Ended"); }
-            @Override public void onError(int error) {
-                Toast.makeText(MainActivity.this, "Σφάλμα: " + error, Toast.LENGTH_SHORT).show();
+            @Override
+            public void onEndOfSpeech() {
+                // Σταματάει το animation όταν σταματήσει να μιλάει
+                btnMic.clearAnimation();
+            }
+            @Override
+            public void onError(int error) {
+                // Σταματάει αν σκάσει error
+                btnMic.clearAnimation();
             }
             @Override
             public void onResults(Bundle results) {
