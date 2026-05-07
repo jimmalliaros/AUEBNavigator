@@ -151,12 +151,13 @@ public class MainActivity extends AppCompatActivity {
                     // Έλεγχος για λέξεις-κλειδιά που αφορούν την κάμερα
                     if (spokenText.contains("κάμερα") || spokenText.contains("camera") ||
                             spokenText.contains("φωτογραφία") || spokenText.contains("άνοιξε")) {
-
+                            Intent i =new Intent(String.valueOf(CameraActivity.class));
+                            startActivity(i);
                         // Ηχητική επιβεβαίωση πριν την αλλαγή οθόνης (Πολύ σημαντικό για τυφλούς!)
-                        Toast.makeText(MainActivity.this, "Ανοίγω την κάμερα...", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(MainActivity.this, "Ανοίγω την κάμερα...", Toast.LENGTH_SHORT).show();
 
                         // Καλούμε τη μέθοδο που ήδη φτιάξαμε για το Swipe Right
-                        onSwipeRight();
+                            onSwipeRight();
 
                     } else {
                         // Αν δεν κατάλαβε, δώσε ένα feedback
