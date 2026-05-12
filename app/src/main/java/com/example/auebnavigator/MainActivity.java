@@ -1,4 +1,4 @@
-package com.example.auebnavigator; // Βάλε το δικό σου package
+package com.example.auebnavigator;
 
 import android.media.AudioManager;
 import android.media.ToneGenerator;
@@ -25,16 +25,17 @@ import androidx.core.view.GestureDetectorCompat;
 import java.util.ArrayList;
 
 public class MainActivity extends AppCompatActivity {
-    private ToneGenerator toneGen; // for "bip"
-    private android.view.animation.Animation pulseAnim; //animation
+    private ToneGenerator toneGen;
+    private android.view.animation.Animation pulseAnim;
     private FrameLayout btnMic;
     private Vibrator vibrator;
     private GestureDetectorCompat gestureDetector;
 
-    // Μεταβλητές για το μικρόφωνο και τις άδειες
     private SpeechRecognizer speechRecognizer;
     private Intent speechIntent;
     private static final int RECORD_AUDIO_PERMISSION_CODE = 100;
+
+    private android.widget.TextView tvSpeechText;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -45,28 +46,57 @@ public class MainActivity extends AppCompatActivity {
         btnMic = findViewById(R.id.btn_mic);
         gestureDetector = new GestureDetectorCompat(this, new SwipeListener());
 
-        // 1. Στήνουμε τα "αυτιά" της εφαρμογής
         setupSpeechRecognizer();
 
-        // 2. Click Listener για το μικρόφωνο
+        // ✅ FIX Bug 3: Περνάμε τα touch events του κουμπιού στον GestureDetector
+        // ώστε τα swipe που ξεκινούν πάνω στο κουμπί να λειτουργούν κανονικά
+        btnMic.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                gestureDetector.onTouchEvent(event);
+                // Επιτρέπουμε στο κουμπί να χειριστεί και αυτό το event (click)
+                return false;
+            }
+        });
+
         btnMic.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 handleMicClick();
             }
         });
-        //3. Φτιάχνουμε το animation του μικροφωνου
-        pulseAnim = android.view.animation.AnimationUtils.loadAnimation(this, R.anim.pulse);
 
-        //4. Το μπιπ Το 100 είναι η ένταση (0-100)
+        pulseAnim = android.view.animation.AnimationUtils.loadAnimation(this, R.anim.pulse);
         toneGen = new ToneGenerator(AudioManager.STREAM_MUSIC, 100);
     }
 
-    // Στέλνουμε τα αγγίγματα στον GestureDetector
+    // ✅ FIX Bug 2: Επιστρέφουμε το αποτέλεσμα του gestureDetector
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        this.gestureDetector.onTouchEvent(event);
-        return super.onTouchEvent(event);
+        boolean gestureResult = gestureDetector.onTouchEvent(event);
+        return gestureResult || super.onTouchEvent(event);
+    }
+
+    // ✅ FIX Bug 5: Επανεκκίνηση recognizer όταν επιστρέφει η activity
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (speechRecognizer == null) {
+            setupSpeechRecognizer();
+        }
+    }
+
+    // ✅ FIX Bug 6: Σταματάμε το speech recognition όταν φεύγει η activity
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (speechRecognizer != null) {
+            speechRecognizer.stopListening();
+            speechRecognizer.cancel();
+        }
+        if (btnMic != null) {
+            btnMic.clearAnimation();
+        }
     }
 
     // --- ΛΟΓΙΚΗ ΜΙΚΡΟΦΩΝΟΥ ΚΑΙ ΑΔΕΙΩΝ ---
@@ -76,11 +106,9 @@ public class MainActivity extends AppCompatActivity {
             vibrator.vibrate(50);
         }
 
-        // Ελέγχουμε αν έχουμε άδεια πριν ανοίξουμε μικρόφωνο
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             startListeningNow();
         } else {
-            // Ζητάμε άδεια με popup
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, RECORD_AUDIO_PERMISSION_CODE);
         }
     }
@@ -92,10 +120,11 @@ public class MainActivity extends AppCompatActivity {
             speechRecognizer.startListening(speechIntent);
         } else {
             Toast.makeText(this, "Σφάλμα: Το μικρόφωνο δεν είναι έτοιμο.", Toast.LENGTH_SHORT).show();
+            // Επανεκκίνηση recognizer αν δεν είναι έτοιμος
+            setupSpeechRecognizer();
         }
     }
 
-    // Διαχείριση της απάντησης του χρήστη στο popup της άδειας
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -109,65 +138,83 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupSpeechRecognizer() {
+        if (speechRecognizer != null) {
+            speechRecognizer.destroy();
+        }
+
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
         speechIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
         speechIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-        speechIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "el-GR"); // Ελληνικά
+        speechIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "el-GR");
 
         speechRecognizer.setRecognitionListener(new RecognitionListener() {
             @Override
             public void onReadyForSpeech(Bundle params) {
-                // Ξεκινάει το animation όταν το μικρόφωνο είναι έτοιμο
                 btnMic.startAnimation(pulseAnim);
-                // Αλλαγή εικονιδίου αν θες (π.χ. σε ένα mic_active drawable)
-                // imgMicIcon.setImageResource(R.drawable.ic_mic_active);
-
-                // 2. Παίζει το Μπιπ (TONE_PROP_BEEP είναι το κλασικό κοφτό μπιπ)
-                // Το 150 είναι η διάρκεια σε milliseconds
                 toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 150);
+                // Προαιρετικό: Ένα μικρό Toast για να ξέρεις ότι ξεκίνησε
+                Toast.makeText(MainActivity.this, "Σε ακούω...", Toast.LENGTH_SHORT).show();
             }
+
             @Override public void onBeginningOfSpeech() { }
             @Override public void onRmsChanged(float rmsdB) { }
             @Override public void onBufferReceived(byte[] buffer) { }
-            @Override
-            public void onEndOfSpeech() {
-                // Σταματάει το animation όταν σταματήσει να μιλάει
-                btnMic.clearAnimation();
-            }
+            @Override public void onEndOfSpeech() { btnMic.clearAnimation(); }
+
             @Override
             public void onError(int error) {
-                // Σταματάει αν σκάσει error
                 btnMic.clearAnimation();
+                String errorMsg = getSpeechErrorMessage(error);
+                Toast.makeText(MainActivity.this, "Σφάλμα: " + errorMsg, Toast.LENGTH_SHORT).show();
+
+                // Επανεκκίνηση για το επόμενο κλικ
+                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> setupSpeechRecognizer(), 500);
             }
+
+            // --- ΕΔΩ ΕΙΝΑΙ Η ΑΛΛΑΓΗ ΠΟΥ ΘΕΣ ---
+
+            @Override
+            public void onPartialResults(Bundle partialResults) {
+                // Την αφήνουμε άδεια για να μην εμφανίζει τίποτα όσο μιλάς
+            }
+
             @Override
             public void onResults(Bundle results) {
                 ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                 if (matches != null && !matches.isEmpty()) {
-                    // Παίρνουμε το επικρατέστερο αποτέλεσμα και το κάνουμε μικρά γράμματα για σωστή σύγκριση
                     String spokenText = matches.get(0).toLowerCase();
 
-                    Log.d("Speech", "Είπες: " + spokenText);
+                    // Εμφανίζουμε ΜΟΝΟ τώρα αυτό που άκουσε η εφαρμογή
+                    Toast.makeText(MainActivity.this, "Είπες: " + spokenText, Toast.LENGTH_LONG).show();
 
-                    // Έλεγχος για λέξεις-κλειδιά που αφορούν την κάμερα
-                    if (spokenText.contains("κάμερα") || spokenText.contains("camera") ||
-                            spokenText.contains("φωτογραφία") || spokenText.contains("άνοιξε")) {
-                            Intent i =new Intent(String.valueOf(CameraActivity.class));
-                            startActivity(i);
-                        // Ηχητική επιβεβαίωση πριν την αλλαγή οθόνης (Πολύ σημαντικό για τυφλούς!)
-                            Toast.makeText(MainActivity.this, "Ανοίγω την κάμερα...", Toast.LENGTH_SHORT).show();
+                    // Έλεγχος για την κάμερα
+                    boolean wantsCamera = spokenText.contains("κάμερα") || spokenText.contains("καμερα");
+                    boolean wantsOpen = spokenText.contains("άνοιξε") || spokenText.contains("ανοιξε");
 
-                        // Καλούμε τη μέθοδο που ήδη φτιάξαμε για το Swipe Right
-                            onSwipeRight();
-
-                    } else {
-                        // Αν δεν κατάλαβε, δώσε ένα feedback
-                        Toast.makeText(MainActivity.this, "Δεν κατάλαβα την εντολή: " + spokenText, Toast.LENGTH_LONG).show();
+                    if (wantsCamera && wantsOpen) {
+                        onSwipeRight(); // Άνοιγμα CameraActivity
                     }
                 }
             }
-            @Override public void onPartialResults(Bundle partialResults) { }
+
             @Override public void onEvent(int eventType, Bundle params) { }
         });
+    }
+
+    // ✅ Helper: Μετατρέπει τον κωδικό σφάλματος σε ανθρώπινο μήνυμα
+    private String getSpeechErrorMessage(int errorCode) {
+        switch (errorCode) {
+            case SpeechRecognizer.ERROR_AUDIO: return "Σφάλμα ήχου";
+            case SpeechRecognizer.ERROR_CLIENT: return "Σφάλμα client";
+            case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS: return "Δεν υπάρχουν άδειες (RECORD_AUDIO ή INTERNET)";
+            case SpeechRecognizer.ERROR_NETWORK: return "Σφάλμα δικτύου - έλεγξε το internet";
+            case SpeechRecognizer.ERROR_NETWORK_TIMEOUT: return "Timeout δικτύου";
+            case SpeechRecognizer.ERROR_NO_MATCH: return "Δεν βρέθηκε αντιστοιχία";
+            case SpeechRecognizer.ERROR_RECOGNIZER_BUSY: return "Ο recognizer είναι απασχολημένος";
+            case SpeechRecognizer.ERROR_SERVER: return "Σφάλμα server";
+            case SpeechRecognizer.ERROR_SPEECH_TIMEOUT: return "Δεν εντοπίστηκε ομιλία";
+            default: return "Άγνωστο σφάλμα (" + errorCode + ")";
+        }
     }
 
     // --- ΛΟΓΙΚΗ SWIPING ---
@@ -201,24 +248,31 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void onSwipeRight() {
-        if (vibrator != null && vibrator.hasVibrator()) {
-            vibrator.vibrate(30);
+        try {
+            if (vibrator != null && vibrator.hasVibrator()) {
+                vibrator.vibrate(30);
+            }
+            Intent intent = new Intent(MainActivity.this, CameraActivity.class);
+            startActivity(intent);
+        } catch (Exception e) {
+            Log.e("NavigationError", "Δεν μπόρεσα να ανοίξω την κάμερα: " + e.getMessage());
+            Toast.makeText(this, "Πρόβλημα στο άνοιγμα της κάμερας", Toast.LENGTH_SHORT).show();
         }
-        // Σιγουρέψου ότι έχεις φτιάξει το CameraActivity, αλλιώς βγάλτο σε σχόλιο!
-        Intent intent = new Intent(MainActivity.this, CameraActivity.class);
-        startActivity(intent);
     }
 
     private void onSwipeLeft() {
         Toast.makeText(this, "Swipe Left", Toast.LENGTH_SHORT).show();
     }
 
-    // Απελευθέρωση μνήμης!
     @Override
     protected void onDestroy() {
         super.onDestroy();
         if (speechRecognizer != null) {
             speechRecognizer.destroy();
+            speechRecognizer = null;
+        }
+        if (toneGen != null) {
+            toneGen.release();
         }
     }
 }
