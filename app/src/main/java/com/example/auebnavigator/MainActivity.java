@@ -1,5 +1,6 @@
 package com.example.auebnavigator;
 
+import android.annotation.SuppressLint;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.Manifest;
@@ -35,8 +36,8 @@ public class MainActivity extends AppCompatActivity {
     private Intent speechIntent;
     private static final int RECORD_AUDIO_PERMISSION_CODE = 100;
 
-    private android.widget.TextView tvSpeechText;
 
+    @SuppressLint("ClickableViewAccessibility")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -50,21 +51,13 @@ public class MainActivity extends AppCompatActivity {
 
         // ✅ FIX Bug 3: Περνάμε τα touch events του κουμπιού στον GestureDetector
         // ώστε τα swipe που ξεκινούν πάνω στο κουμπί να λειτουργούν κανονικά
-        btnMic.setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                gestureDetector.onTouchEvent(event);
-                // Επιτρέπουμε στο κουμπί να χειριστεί και αυτό το event (click)
-                return false;
-            }
+        btnMic.setOnTouchListener((v, event) -> {
+            gestureDetector.onTouchEvent(event);
+            // Επιτρέπουμε στο κουμπί να χειριστεί και αυτό το event (click)
+            return false;
         });
 
-        btnMic.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                handleMicClick();
-            }
-        });
+        btnMic.setOnClickListener(v -> handleMicClick());
 
         pulseAnim = android.view.animation.AnimationUtils.loadAnimation(this, R.anim.pulse);
         toneGen = new ToneGenerator(AudioManager.STREAM_MUSIC, 100);
@@ -114,7 +107,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startListeningNow() {
-        Toast.makeText(this, "Ακούω...", Toast.LENGTH_SHORT).show();
         if (speechRecognizer != null && speechIntent != null) {
             speechRecognizer.cancel();
             speechRecognizer.startListening(speechIntent);
@@ -164,11 +156,23 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onError(int error) {
                 btnMic.clearAnimation();
+
+                // 🔥 FIX: Αν το σφάλμα είναι Client (5), απλά το κάνουμε ignore και σταματάμε την εκτέλεση
+                if (error == SpeechRecognizer.ERROR_CLIENT) {
+                    Log.d("Speech", "Client error αγνοήθηκε λόγω αλλαγής activity.");
+                    return;
+                }
+
+                // Για τα υπόλοιπα σφάλματα (π.χ. timeout) δείχνουμε το Toast
                 String errorMsg = getSpeechErrorMessage(error);
                 Toast.makeText(MainActivity.this, "Σφάλμα: " + errorMsg, Toast.LENGTH_SHORT).show();
 
                 // Επανεκκίνηση για το επόμενο κλικ
-                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> setupSpeechRecognizer(), 500);
+                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                    if (!isFinishing()) {
+                        setupSpeechRecognizer();
+                    }
+                }, 500);
             }
 
             // --- ΕΔΩ ΕΙΝΑΙ Η ΑΛΛΑΓΗ ΠΟΥ ΘΕΣ ---
@@ -184,15 +188,17 @@ public class MainActivity extends AppCompatActivity {
                 if (matches != null && !matches.isEmpty()) {
                     String spokenText = matches.get(0).toLowerCase();
 
-                    // Εμφανίζουμε ΜΟΝΟ τώρα αυτό που άκουσε η εφαρμογή
                     Toast.makeText(MainActivity.this, "Είπες: " + spokenText, Toast.LENGTH_LONG).show();
 
-                    // Έλεγχος για την κάμερα
                     boolean wantsCamera = spokenText.contains("κάμερα") || spokenText.contains("καμερα");
                     boolean wantsOpen = spokenText.contains("άνοιξε") || spokenText.contains("ανοιξε");
 
                     if (wantsCamera && wantsOpen) {
-                        onSwipeRight(); // Άνοιγμα CameraActivity
+                        // 🔥 FIX: Κλείνουμε ομαλά το μικρόφωνο εμείς, ΠΡΙΝ φύγουμε για τη νέα οθόνη
+                        if (speechRecognizer != null) {
+                            speechRecognizer.cancel();
+                        }
+                        onSwipeRight();
                     }
                 }
             }
@@ -224,7 +230,7 @@ public class MainActivity extends AppCompatActivity {
         private static final int SWIPE_VELOCITY_THRESHOLD = 100;
 
         @Override
-        public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
+        public boolean onFling(MotionEvent e1, @NonNull MotionEvent e2, float velocityX, float velocityY) {
             boolean result = false;
             try {
                 float diffY = e2.getY() - e1.getY();
