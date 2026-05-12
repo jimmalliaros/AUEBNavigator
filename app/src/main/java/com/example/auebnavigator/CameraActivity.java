@@ -4,6 +4,10 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.media.Image;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
@@ -27,50 +31,74 @@ import com.google.mlkit.vision.objects.ObjectDetection;
 import com.google.mlkit.vision.objects.ObjectDetector;
 import com.google.mlkit.vision.objects.defaults.ObjectDetectorOptions;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class CameraActivity extends AppCompatActivity {
+// 🔥 FIX 1: Προσθέσαμε το implements SensorEventListener εδώ!
+public class CameraActivity extends AppCompatActivity implements SensorEventListener {
 
     private TextToSpeech tts;
     private String startLocation;
     private String destination;
 
     private PreviewView viewFinder;
-    private TextView tvObstacleInfo; // Το TextView που έφτιαξες κάτω-κάτω
+    private TextView tvObstacleInfo;
+
+    // --- Μεταβλητές Βηματομετρητή ---
+    private SensorManager sensorManager;
+    private Sensor stepDetectorSensor;
+    private int currentSteps = 0;
+    private int targetSteps = 15;
+    private boolean isNavigating = false;
 
     private static final int CAMERA_PERMISSION_CODE = 200;
-
-    // Το Thread που θα τρέχει βαριές δουλειές (Image Analysis) στο παρασκήνιο
     private ExecutorService cameraExecutor;
-
-    // Ο ανιχνευτής αντικειμένων του ML Kit
     private ObjectDetector objectDetector;
-
-    // Μεταβλητή για να μην μας "σπαμάρει" το TTS συνέχεια για το ίδιο εμπόδιο
     private long lastSpokenTime = 0;
+    // --- Μεταβλητές Γράφου & Διαδρομής ---
+    private AuebGraph auebGraph;
+
+    private List<AuebGraph.Edge> currentPath; // Η λίστα με τις οδηγίες του Α*
+    private int currentEdgeIndex = 0; // Σε ποιο "κομμάτι" της διαδρομής βρισκόμαστε
+
+
+    //----------------------------------------
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.camera);
+        setContentView(R.layout.activity_camera);
+
+        // Αρχικοποίηση Sensor Manager
+        sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+        if (sensorManager != null) {
+            stepDetectorSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR);
+            if (stepDetectorSensor == null) {
+                Toast.makeText(this, "Το κινητό δεν έχει αισθητήρα βημάτων!", Toast.LENGTH_LONG).show();
+            }
+        }
 
         viewFinder = findViewById(R.id.viewFinder);
         tvObstacleInfo = findViewById(R.id.textView);
 
-        // 1. Ρυθμίζουμε τον Ανιχνευτή (ML Kit Options)
-        // Το SINGLE_IMAGE_MODE είναι πιο ελαφρύ για το κινητό, το STREAM_MODE είναι για 100% real-time tracking.
+        ActivityCompat.requestPermissions(this, new String[]{
+                Manifest.permission.CAMERA,
+                Manifest.permission.ACTIVITY_RECOGNITION
+        }, CAMERA_PERMISSION_CODE);
+
         ObjectDetectorOptions options = new ObjectDetectorOptions.Builder()
                 .setDetectorMode(ObjectDetectorOptions.STREAM_MODE)
                 .enableMultipleObjects()
-                .enableClassification() // Μας επιστρέφει "τι" είναι (π.χ. Furniture, Fashion good)
+                .enableClassification()
                 .build();
 
         objectDetector = ObjectDetection.getClient(options);
-
         cameraExecutor = Executors.newSingleThreadExecutor();
+        // Αρχικοποιούμε τον Γράφο της ΑΣΟΕΕ
+        auebGraph = new AuebGraph();
 
         Intent intent = getIntent();
         startLocation = intent.getStringExtra("START_LOCATION");
@@ -94,13 +122,11 @@ public class CameraActivity extends AppCompatActivity {
             try {
                 ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
 
-                // Η προβολή της κάμερας στην οθόνη
                 Preview preview = new Preview.Builder().build();
                 preview.setSurfaceProvider(viewFinder.getSurfaceProvider());
 
-                // 🔥 ΕΔΩ ΜΠΑΙΝΕΙ ΤΟ MACHINE LEARNING (Image Analysis)
                 ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST) // Αν αργήσει το ML, πέτα τα παλιά καρέ
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build();
 
                 imageAnalysis.setAnalyzer(cameraExecutor, this::analyzeImage);
@@ -108,7 +134,6 @@ public class CameraActivity extends AppCompatActivity {
                 CameraSelector cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA;
                 cameraProvider.unbindAll();
 
-                // Συνδέουμε Preview ΚΑΙ Analysis
                 cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis);
 
             } catch (ExecutionException | InterruptedException e) {
@@ -117,15 +142,12 @@ public class CameraActivity extends AppCompatActivity {
         }, ContextCompat.getMainExecutor(this));
     }
 
-    // Η μέθοδος που τρέχει δεκάδες φορές το δευτερόλεπτο και ταΐζει το Νευρωνικό Δίκτυο
     @SuppressLint("UnsafeOptInUsageError")
     private void analyzeImage(@NonNull ImageProxy imageProxy) {
         Image mediaImage = imageProxy.getImage();
         if (mediaImage != null) {
-            // Παίρνουμε τις διαστάσεις της ολόκληρης εικόνας (Width & Height)
             int imageWidth = mediaImage.getWidth();
             int imageHeight = mediaImage.getHeight();
-            // Υπολογίζουμε το συνολικό Εμβαδόν (Area) του καρέ σε pixels
             float totalImageArea = imageWidth * imageHeight;
 
             InputImage image = InputImage.fromMediaImage(mediaImage, imageProxy.getImageInfo().getRotationDegrees());
@@ -137,39 +159,29 @@ public class CameraActivity extends AppCompatActivity {
 
                         for (com.google.mlkit.vision.objects.DetectedObject obj : detectedObjects) {
 
-                            // 1. Παίρνουμε το Bounding Box (το "κουτί" που περικλείει το αντικείμενο)
                             android.graphics.Rect boundingBox = obj.getBoundingBox();
-
-                            // 2. Υπολογίζουμε το Εμβαδόν (Area) του Αντικειμένου
                             float objectArea = boundingBox.width() * boundingBox.height();
-
-                            // 3. Βρίσκουμε το ποσοστό κάλυψης (Πόσο % της οθόνης πιάνει το αντικείμενο;)
                             float coveragePercentage = (objectArea / totalImageArea) * 100;
 
-                            // 4. Η "ΕΞΥΠΝΗ" ΛΟΓΙΚΗ: Ειδοποιούμε ΜΟΝΟ αν το αντικείμενο είναι "μεγάλο" (ΚΟΝΤΑ μας)
-                            // π.χ. Αν πιάνει πάνω από το 35% της οθόνης (Μπορείς να παίξεις με αυτό το νούμερο)
                             if (coveragePercentage > 35.0f && !obj.getLabels().isEmpty()) {
                                 isCloseObstacleFound = true;
                                 String englishLabel = obj.getLabels().get(0).getText();
                                 labelToSpeak = translateLabel(englishLabel);
 
-                                // (Προαιρετικό) Για Debug: Να βλέπεις στην οθόνη το ποσοστό
                                 String finalLabel = labelToSpeak;
                                 runOnUiThread(() -> tvObstacleInfo.setText("Κοντινό Εμπόδιο: " + finalLabel + " (" + (int)coveragePercentage + "%)"));
 
-                                break; // Βρήκαμε ένα κοντινό εμπόδιο, σταματάμε να ψάχνουμε τα άλλα στο ίδιο καρέ
+                                break;
                             }
                         }
 
-                        // Αν βρέθηκε ΚΟΝΤΙΝΟ εμπόδιο και πέρασε το cooldown time (π.χ. 4 δευτερόλεπτα τώρα)
                         if (isCloseObstacleFound) {
                             long currentTime = System.currentTimeMillis();
-                            if (currentTime - lastSpokenTime > 4000) { // Αύξησα το cooldown στα 4 δευτερόλεπτα
+                            if (currentTime - lastSpokenTime > 4000) {
                                 speakText("Προσοχή. Εμπόδιο στα δύο μέτρα. " + labelToSpeak);
                                 lastSpokenTime = currentTime;
                             }
                         } else {
-                            // Αν δεν υπάρχει κοντινό εμπόδιο, καθαρίζουμε το UI (δεν μιλάει)
                             runOnUiThread(() -> tvObstacleInfo.setText("Πορεία Καθαρή"));
                         }
                     })
@@ -180,8 +192,6 @@ public class CameraActivity extends AppCompatActivity {
         }
     }
 
-    // Helper μέθοδος: Το ML Kit της Google επιστρέφει Αγγλικές κατηγορίες
-    // (π.χ. Furniture, Plant, Place). Τα κάνουμε "Ελληνοποίηση".
     private String translateLabel(String englishLabel) {
         switch (englishLabel) {
             case "Furniture": return "Έπιπλο";
@@ -192,8 +202,6 @@ public class CameraActivity extends AppCompatActivity {
             default: return "Άγνωστο αντικείμενο";
         }
     }
-
-    // --- ΚΩΔΙΚΑΣ PERMISSIONS & TTS ---
 
     private boolean allPermissionsGranted() {
         return ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
@@ -209,23 +217,93 @@ public class CameraActivity extends AppCompatActivity {
     }
 
     private void startNavigationSequence() {
-        if (startLocation.equals("Κεντρική Είσοδος") && destination.equals("Αμφιθέατρο Α")) {
-            speakText("Προχώρα ευθεία. Ανίχνευση εμποδίων ενεργή.");
-        } else {
-            speakText("Ανίχνευση εμποδίων ενεργή. Προορισμός: " + destination);
+        // Ζητάμε από τον Γράφο να βρει τη διαδρομή με τον Α*
+        currentPath = auebGraph.findPathAStar(startLocation, destination);
+
+        if (currentPath == null || currentPath.isEmpty()) {
+            speakText("Συγγνώμη, δεν βρέθηκε διαδρομή από το " + startLocation + " προς το " + destination);
+            return;
         }
+
+        speakText("Η διαδρομή υπολογίστηκε. Ανίχνευση εμποδίων ενεργή. Ξεκινάμε.");
+        isNavigating = true;
+        currentEdgeIndex = 0;
+
+        // Καλούμε την πρώτη οδηγία!
+        startNextLeg();
     }
 
+    // 🔥 ΝΕΑ HELPER ΜΕΘΟΔΟΣ: Τραβάει την επόμενη οδηγία από τη Λίστα
+    private void startNextLeg() {
+        // Αν φτάσαμε στο τέλος της λίστας...
+        if (currentEdgeIndex >= currentPath.size()) {
+            isNavigating = false; // Τέλος πλοήγησης
+            speakText("Έφτασες στον τελικό προορισμό σου: " + destination);
+            return;
+        }
+
+        // Διαβάζουμε την τωρινή Ακμή
+        AuebGraph.Edge nextEdge = currentPath.get(currentEdgeIndex);
+
+        targetSteps = nextEdge.steps; // Βάζουμε νέο στόχο βημάτων!
+        currentSteps = 0; // Μηδενίζουμε τα παλιά βήματα
+
+        speakText(nextEdge.instruction); // Του λέμε τι να κάνει (π.χ. "Στρίψε αριστερά")
+
+        currentEdgeIndex++; // Πάμε στο επόμενο "κομμάτι" για την επόμενη φορά
+    }
+
+    // 🔥 FIX 2: Έκλεισα τη μέθοδο speakText κανονικά!
     private void speakText(String text) {
         if (tts != null) {
             tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
         }
     }
 
+    // --- ΚΩΔΙΚΑΣ ΒΗΜΑΤΟΜΕΤΡΗΤΗ ---
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (sensorManager != null && stepDetectorSensor != null) {
+            sensorManager.registerListener(this, stepDetectorSensor, SensorManager.SENSOR_DELAY_FASTEST);
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (sensorManager != null) {
+            sensorManager.unregisterListener(this);
+        }
+    }
+
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+        if (event.sensor.getType() == Sensor.TYPE_STEP_DETECTOR && isNavigating) {
+            currentSteps++;
+            Log.d("Pedometer", "Βήμα: " + currentSteps + " / " + targetSteps);
+
+            // Αν ολοκληρώσαμε αυτό το "κομμάτι" της διαδρομής (ένα Edge)
+            if (currentSteps == targetSteps) {
+                // Φωνάζουμε την επόμενη οδηγία! (Αν δεν έχει άλλη, θα πει "έφτασες")
+                startNextLeg();
+            }
+            else if (currentSteps % 5 == 0) {
+                // Κάθε 5 βήματα υπενθύμιση
+                speakText("Ακόμα " + (targetSteps - currentSteps) + " βήματα.");
+            }
+        }
+    }
+
+    @Override
+    public void onAccuracyChanged(Sensor sensor, int accuracy) {
+    }
+
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        cameraExecutor.shutdown(); // Κλείνουμε το background thread
+        cameraExecutor.shutdown();
         if (tts != null) {
             tts.stop();
             tts.shutdown();
