@@ -29,6 +29,16 @@ import java.util.ArrayList;
 
 public class MainActivity extends AppCompatActivity {
 
+    // Κρατάει την τωρινή τοποθεσία του χρήστη (π.χ. "είσοδος", "πρώτος όροφος").
+    // Το null σημαίνει ότι δεν ξέρουμε ακόμα.
+    private String currentLocation = null;
+
+    // Ένα flag που μας λέει αν η εφαρμογή περιμένει απάντηση για το πού βρίσκεται ο χρήστης.
+    private boolean isWaitingForLocation = false;
+
+    // Κρατάει τον προορισμό που ζήτησε ο χρήστης, για να τον θυμόμαστε αφού μας πει πού είναι.
+    private String pendingDestination = null;
+
     private TextToSpeech tts;
     private ToneGenerator toneGen;
     private android.view.animation.Animation pulseAnim;
@@ -77,7 +87,7 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     Log.d("TTS", "Το Text-To-Speech είναι έτοιμο!");
                     // Μπορείς να βάλεις να λέει ένα χαιρετισμό μόλις ανοίγει το app
-                    speakText("Γεια σου φίλε! Το σύστημα πλοήγησης είναι έτοιμο.");
+                    speakText("To σύστημα πλοήγησης είναι έτοιμο!.");
                 }
             } else {
                 Log.e("TTS", "Η αρχικοποίηση του TTS απέτυχε.");
@@ -218,37 +228,47 @@ public class MainActivity extends AppCompatActivity {
                     String spokenText = matches.get(0).toLowerCase();
                     Log.d("Speech", "Ο χρήστης είπε: " + spokenText);
 
-                    // 1. Έλεγχος για "Κάμερα" (Το κρατάμε, γιατί το είχες φτιάξει ήδη)
+                    // --- CHECK 1: Περιμένουμε τοποθεσία; ---
+                    if (isWaitingForLocation) {
+                        handleLocationResponse(spokenText);
+                        return; // Σταματάμε εδώ, μην πάει παρακάτω
+                    }
+
+                    // --- CHECK 2: Κάμερα ---
                     boolean wantsCamera = spokenText.contains("κάμερα") || spokenText.contains("καμερα");
                     boolean wantsOpen = spokenText.contains("άνοιξε") || spokenText.contains("ανοιξε");
 
                     if (wantsCamera && wantsOpen) {
                         speakText("Ανοίγω την κάμερα.");
                         closeMicAndNavigate(new Intent(MainActivity.this, CameraActivity.class));
-                        return; // Βγαίνουμε από τη μέθοδο για να μην κάνει άλλους ελέγχους
+                        return;
                     }
 
-                    // 2. Ελέγχουμε αν ζητάει Προορισμό (Η λογική πλοήγησης)
-                    // Ψάχνουμε λέξεις κλειδιά (π.χ. "πήγαινε", "θέλω να πάω", "πού είναι")
+                    // --- CHECK 3: Πλοήγηση (Προορισμοί) ---
                     if (spokenText.contains("πήγαινε") || spokenText.contains("θέλω να πάω") || spokenText.contains("πού είναι") || spokenText.contains("που ειναι")) {
 
-                        // Ελέγχουμε για συγκεκριμένους προορισμούς μέσα στην ΑΣΟΕΕ
-                        if (spokenText.contains("αμφιθέατρο α") || spokenText.contains("αμφιθεατρο α")) {
-                            speakText("Για το Αμφιθέατρο Α: Προχώρα ευθεία, πέρνα τις κεντρικές σκάλες, και θα το βρεις στα δεξιά σου, δίπλα στο κυλικείο.");
-                        }
-                        else if (spokenText.contains("γραμματεία") || spokenText.contains("γραμματεια")) {
-                            speakText("Για τη Γραμματεία πληροφορικής: Ανέβα στον τρίτο όροφο με το ασανσέρ. Μόλις βγεις, προχώρα ευθεία μέχρι το τέλος του διαδρόμου.");
-                        }
-                        else if (spokenText.contains("κυλικείο") || spokenText.contains("κυλικειο")) {
-                            speakText("Για το κυλικείο: Βρίσκεται στο ισόγειο, πίσω από το κεντρικό κλιμακοστάσιο.");
-                        }
-                        else {
-                            // Αν ζήτησε να πάει κάπου, αλλά δεν ξέρουμε πού
+                        // Βρίσκουμε τον προορισμό
+                        String destination = null;
+                        if (spokenText.contains("αμφιθέατρο α") || spokenText.contains("αμφιθεατρο α")) destination = "Αμφιθέατρο Α";
+                        else if (spokenText.contains("γραμματεία") || spokenText.contains("γραμματεια")) destination = "Γραμματεία";
+                        else if (spokenText.contains("κυλικείο") || spokenText.contains("κυλικειο")) destination = "Κυλικείο";
+
+                        if (destination != null) {
+                            // Έχουμε προορισμό. Ξέρουμε πού είναι ο χρήστης;
+                            if (currentLocation == null) {
+                                // Δεν ξέρουμε. Τον ρωτάμε και αποθηκεύουμε πού θέλει να πάει.
+                                pendingDestination = destination;
+                                isWaitingForLocation = true;
+                                speakText("Πολύ ωραία. Για να σε κατευθύνω στο " + destination + ", πες μου πρώτα: Βρίσκεσαι στην κεντρική είσοδο ή κάπου αλλού;");
+                            } else {
+                                // Ξέρουμε πού είναι! Του δίνουμε τις οδηγίες (θα το φτιάξουμε σε άλλη μέθοδο για καθαριότητα)
+                                provideNavigationInstructions(currentLocation, destination);
+                            }
+                        } else {
                             speakText("Δεν αναγνώρισα τον προορισμό. Σε παρακαλώ, δοκίμασε ξανά.");
                         }
                     }
                     else {
-                        // Αν δεν είπε ούτε "κάμερα", ούτε "πήγαινε"
                         speakText("Δεν κατάλαβα την εντολή σου. Μπορείς να πεις, για παράδειγμα, πήγαινέ με στο Αμφιθέατρο Α.");
                     }
                 }
@@ -258,6 +278,35 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    // Επεξεργάζεται την απάντηση του χρήστη για το πού βρίσκεται
+    private void handleLocationResponse(String spokenText) {
+        if (spokenText.contains("είσοδο") || spokenText.contains("εισοδο") || spokenText.contains("πατησίων")) {
+            currentLocation = "Κεντρική Είσοδος";
+            isWaitingForLocation = false; // Σταματάμε να περιμένουμε
+            speakText("Τέλεια. Βρίσκεσαι στην Κεντρική Είσοδο.");
+
+            // Τώρα του δίνουμε τις οδηγίες για τον προορισμό που είχε ζητήσει πριν
+            provideNavigationInstructions(currentLocation, pendingDestination);
+            pendingDestination = null; // Καθαρίζουμε τον προορισμό
+        } else {
+            // Δεν καταλάβαμε πού είναι
+            speakText("Δεν κατάλαβα την τοποθεσία σου. Είσαι στην κεντρική είσοδο; Πες ναι ή όχι.");
+        }
+    }
+
+    // Η "Καρδιά" του routing: Δίνει διαφορετικές οδηγίες ανάλογα με την αφετηρία
+    private void provideNavigationInstructions(String start, String end) {
+        if (start.equals("Κεντρική Είσοδος") && end.equals("Αμφιθέατρο Α")) {
+            speakText("Από την κεντρική είσοδο: Προχώρα ευθεία, πέρνα τις κεντρικές σκάλες, και θα βρεις το Αμφιθέατρο Α στα δεξιά σου.");
+        }
+        else if (start.equals("Κεντρική Είσοδος") && end.equals("Γραμματεία")) {
+            speakText("Από την κεντρική είσοδο: Πήγαινε στα αριστερά σου για να βρεις το ασανσέρ. Ανέβα στον τρίτο όροφο.");
+        }
+        else if (start.equals("Κεντρική Είσοδος") && end.equals("Κυλικείο")) {
+            speakText("Από την κεντρική είσοδο: Προχώρα ευθεία μέχρι το τέλος του διαδρόμου. Το κυλικείο είναι ακριβώς μπροστά σου.");
+        }
+        // Εδώ μπορείς να προσθέσεις όσους συνδυασμούς θες!
+    }
     // ✅ Helper: Μετατρέπει τον κωδικό σφάλματος σε ανθρώπινο μήνυμα
     private String getSpeechErrorMessage(int errorCode) {
         switch (errorCode) {
@@ -336,6 +385,31 @@ public class MainActivity extends AppCompatActivity {
             tts.stop();
             tts.shutdown();
         }
+    }
+
+    // Κάνουμε "Hijack" τα πατήματα των φυσικών κουμπιών
+    @Override
+    public boolean onKeyDown(int keyCode, android.view.KeyEvent event) {
+        // Αν το κουμπί που πατήθηκε είναι το Volume Up
+        if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP) {
+
+            // Το event.getRepeatCount() == 0 εξασφαλίζει ότι θα πιάσει μόνο
+            // το πρώτο πάτημα, και όχι τα συνεχόμενα αν το κρατάει πατημένο
+            if (event.getRepeatCount() == 0) {
+                Log.d("HardwareTrigger", "Πατήθηκε το Volume Up - Ενεργοποίηση μικροφώνου");
+
+                // Προσομοιώνουμε το πάτημα του ψηφιακού κουμπιού
+                handleMicClick();
+            }
+
+            // Επιστρέφουμε true για να πούμε στο Android:
+            // "Το χειρίστηκα εγώ, μην δυναμώσεις την ένταση του ήχου"
+            return true;
+        }
+
+        // Αν πατήθηκε οποιοδήποτε άλλο κουμπί (π.χ. back button),
+        // αφήνουμε το Android να κάνει τη δουλειά του
+        return super.onKeyDown(keyCode, event);
     }
 
     // Μέθοδος που κλείνει το μικρόφωνο και αλλάζει οθόνη με ασφάλεια
