@@ -11,6 +11,10 @@
     <!-- Για το vibrator -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- Για την κάμερα! -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-permission android:name="android.permission.CAMERA" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

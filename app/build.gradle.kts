@@ -32,7 +32,12 @@ android {
 }
 
 dependencies {
-    
+    // CameraX core library using the camera2 implementation
+    val camerax_version = "1.3.1" // Έβαλα και μια πιο καινούργια σταθερή έκδοση
+    implementation("androidx.camera:camera-core:$camerax_version")
+    implementation("androidx.camera:camera-camera2:$camerax_version")
+    implementation("androidx.camera:camera-lifecycle:$camerax_version")
+    implementation("androidx.camera:camera-view:$camerax_version")
 
     implementation(libs.appcompat)
     implementation(libs.material)
