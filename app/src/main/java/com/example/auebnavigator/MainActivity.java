@@ -1,5 +1,7 @@
 package com.example.auebnavigator;
 
+import android.speech.tts.TextToSpeech;
+import java.util.Locale;
 import android.annotation.SuppressLint;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
@@ -26,6 +28,8 @@ import androidx.core.view.GestureDetectorCompat;
 import java.util.ArrayList;
 
 public class MainActivity extends AppCompatActivity {
+
+    private TextToSpeech tts;
     private ToneGenerator toneGen;
     private android.view.animation.Animation pulseAnim;
     private FrameLayout btnMic;
@@ -61,6 +65,31 @@ public class MainActivity extends AppCompatActivity {
 
         pulseAnim = android.view.animation.AnimationUtils.loadAnimation(this, R.anim.pulse);
         toneGen = new ToneGenerator(AudioManager.STREAM_MUSIC, 100);
+
+        tts = new TextToSpeech(this, status -> {
+            if (status == TextToSpeech.SUCCESS) {
+                // Ορίζουμε τα Ελληνικά
+                int result = tts.setLanguage(new Locale("el", "GR"));
+
+                if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    Log.e("TTS", "Η Ελληνική γλώσσα δεν υποστηρίζεται ή λείπει από το κινητό.");
+                    Toast.makeText(this, "Πρέπει να κατεβάσεις τα Ελληνικά στις ρυθμίσεις TTS του κινητού!", Toast.LENGTH_LONG).show();
+                } else {
+                    Log.d("TTS", "Το Text-To-Speech είναι έτοιμο!");
+                    // Μπορείς να βάλεις να λέει ένα χαιρετισμό μόλις ανοίγει το app
+                    speakText("Γεια σου φίλε! Το σύστημα πλοήγησης είναι έτοιμο.");
+                }
+            } else {
+                Log.e("TTS", "Η αρχικοποίηση του TTS απέτυχε.");
+            }
+        });
+    }
+
+    private void speakText(String text) {
+        if (tts != null) {
+            // Το QUEUE_FLUSH σημαίνει ότι αν μιλάει ήδη, το κόβει και λέει το καινούργιο αμέσως
+            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
+        }
     }
 
     // ✅ FIX Bug 2: Επιστρέφουμε το αποτέλεσμα του gestureDetector
@@ -187,18 +216,40 @@ public class MainActivity extends AppCompatActivity {
                 ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                 if (matches != null && !matches.isEmpty()) {
                     String spokenText = matches.get(0).toLowerCase();
+                    Log.d("Speech", "Ο χρήστης είπε: " + spokenText);
 
-                    Toast.makeText(MainActivity.this, "Είπες: " + spokenText, Toast.LENGTH_LONG).show();
-
+                    // 1. Έλεγχος για "Κάμερα" (Το κρατάμε, γιατί το είχες φτιάξει ήδη)
                     boolean wantsCamera = spokenText.contains("κάμερα") || spokenText.contains("καμερα");
                     boolean wantsOpen = spokenText.contains("άνοιξε") || spokenText.contains("ανοιξε");
 
                     if (wantsCamera && wantsOpen) {
-                        // 🔥 FIX: Κλείνουμε ομαλά το μικρόφωνο εμείς, ΠΡΙΝ φύγουμε για τη νέα οθόνη
-                        if (speechRecognizer != null) {
-                            speechRecognizer.cancel();
+                        speakText("Ανοίγω την κάμερα.");
+                        closeMicAndNavigate(new Intent(MainActivity.this, CameraActivity.class));
+                        return; // Βγαίνουμε από τη μέθοδο για να μην κάνει άλλους ελέγχους
+                    }
+
+                    // 2. Ελέγχουμε αν ζητάει Προορισμό (Η λογική πλοήγησης)
+                    // Ψάχνουμε λέξεις κλειδιά (π.χ. "πήγαινε", "θέλω να πάω", "πού είναι")
+                    if (spokenText.contains("πήγαινε") || spokenText.contains("θέλω να πάω") || spokenText.contains("πού είναι") || spokenText.contains("που ειναι")) {
+
+                        // Ελέγχουμε για συγκεκριμένους προορισμούς μέσα στην ΑΣΟΕΕ
+                        if (spokenText.contains("αμφιθέατρο α") || spokenText.contains("αμφιθεατρο α")) {
+                            speakText("Για το Αμφιθέατρο Α: Προχώρα ευθεία, πέρνα τις κεντρικές σκάλες, και θα το βρεις στα δεξιά σου, δίπλα στο κυλικείο.");
                         }
-                        onSwipeRight();
+                        else if (spokenText.contains("γραμματεία") || spokenText.contains("γραμματεια")) {
+                            speakText("Για τη Γραμματεία πληροφορικής: Ανέβα στον τρίτο όροφο με το ασανσέρ. Μόλις βγεις, προχώρα ευθεία μέχρι το τέλος του διαδρόμου.");
+                        }
+                        else if (spokenText.contains("κυλικείο") || spokenText.contains("κυλικειο")) {
+                            speakText("Για το κυλικείο: Βρίσκεται στο ισόγειο, πίσω από το κεντρικό κλιμακοστάσιο.");
+                        }
+                        else {
+                            // Αν ζήτησε να πάει κάπου, αλλά δεν ξέρουμε πού
+                            speakText("Δεν αναγνώρισα τον προορισμό. Σε παρακαλώ, δοκίμασε ξανά.");
+                        }
+                    }
+                    else {
+                        // Αν δεν είπε ούτε "κάμερα", ούτε "πήγαινε"
+                        speakText("Δεν κατάλαβα την εντολή σου. Μπορείς να πεις, για παράδειγμα, πήγαινέ με στο Αμφιθέατρο Α.");
                     }
                 }
             }
@@ -280,5 +331,19 @@ public class MainActivity extends AppCompatActivity {
         if (toneGen != null) {
             toneGen.release();
         }
+        // Καθαρισμός του TTS
+        if (tts != null) {
+            tts.stop();
+            tts.shutdown();
+        }
+    }
+
+    // Μέθοδος που κλείνει το μικρόφωνο και αλλάζει οθόνη με ασφάλεια
+    private void closeMicAndNavigate(Intent intent) {
+        if (speechRecognizer != null) {
+            speechRecognizer.cancel();
+        }
+        // Δίνουμε 1.5 δευτερόλεπτο στο TTS να μιλήσει πριν αλλάξει η οθόνη
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> startActivity(intent), 1500);
     }
 }
