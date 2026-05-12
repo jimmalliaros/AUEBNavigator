@@ -279,17 +279,26 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // Επεξεργάζεται την απάντηση του χρήστη για το πού βρίσκεται
+    // Μέσα στο MainActivity.java
+
     private void handleLocationResponse(String spokenText) {
         if (spokenText.contains("είσοδο") || spokenText.contains("εισοδο") || spokenText.contains("πατησίων")) {
             currentLocation = "Κεντρική Είσοδος";
-            isWaitingForLocation = false; // Σταματάμε να περιμένουμε
-            speakText("Τέλεια. Βρίσκεσαι στην Κεντρική Είσοδο.");
+            isWaitingForLocation = false;
+            speakText("Τέλεια. Ξεκινάμε την πλοήγηση για το " + pendingDestination + ".");
 
-            // Τώρα του δίνουμε τις οδηγίες για τον προορισμό που είχε ζητήσει πριν
-            provideNavigationInstructions(currentLocation, pendingDestination);
-            pendingDestination = null; // Καθαρίζουμε τον προορισμό
+            // 🔥 ΕΔΩ ΓΙΝΕΤΑΙ Η ΑΛΛΑΓΗ! Φτιάχνουμε το Intent για την CameraActivity
+            Intent intent = new Intent(MainActivity.this, CameraActivity.class);
+            // "Πακετάρουμε" την αφετηρία και τον προορισμό μέσα στο Intent (σαν μεταβλητές)
+            intent.putExtra("START_LOCATION", currentLocation);
+            intent.putExtra("DESTINATION", pendingDestination);
+
+            pendingDestination = null; // Καθαρίζουμε για την επόμενη φορά
+
+            // Ανοίγουμε την CameraActivity με τη μέθοδο που κλείνει το μικρόφωνο
+            closeMicAndNavigate(intent);
+
         } else {
-            // Δεν καταλάβαμε πού είναι
             speakText("Δεν κατάλαβα την τοποθεσία σου. Είσαι στην κεντρική είσοδο; Πες ναι ή όχι.");
         }
     }
