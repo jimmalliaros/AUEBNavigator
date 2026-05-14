@@ -84,10 +84,17 @@ public class CameraActivity extends AppCompatActivity implements SensorEventList
         viewFinder = findViewById(R.id.viewFinder);
         tvObstacleInfo = findViewById(R.id.textView);
 
-        ActivityCompat.requestPermissions(this, new String[]{
-                Manifest.permission.CAMERA,
-                Manifest.permission.ACTIVITY_RECOGNITION
-        }, CAMERA_PERMISSION_CODE);
+        // Ο ΣΩΣΤΟΣ ΕΛΕΓΧΟΣ ΣΤΟ ΤΕΛΟΣ ΤΗΣ onCreate:
+        if (allPermissionsGranted()) {
+            startCamera();
+            setupTTS();
+        } else {
+            // Αν λείπει έστω και μία άδεια, ζητάμε και τις δύο ταυτόχρονα!
+            ActivityCompat.requestPermissions(this, new String[]{
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.ACTIVITY_RECOGNITION
+            }, CAMERA_PERMISSION_CODE);
+        }
 
         ObjectDetectorOptions options = new ObjectDetectorOptions.Builder()
                 .setDetectorMode(ObjectDetectorOptions.STREAM_MODE)
@@ -204,7 +211,27 @@ public class CameraActivity extends AppCompatActivity implements SensorEventList
     }
 
     private boolean allPermissionsGranted() {
-        return ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+        boolean cameraGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+        boolean activityGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED;
+        return cameraGranted && activityGranted;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == CAMERA_PERMISSION_CODE) {
+            if (allPermissionsGranted()) {
+                startCamera();
+                setupTTS();
+
+                // Το πιο σημαντικό: Ενεργοποιούμε τον σένσορα ΑΦΟΥ μας δώσει την άδεια
+                if (sensorManager != null && stepDetectorSensor != null) {
+                    sensorManager.registerListener(this, stepDetectorSensor, SensorManager.SENSOR_DELAY_FASTEST);
+                }
+            } else {
+                Toast.makeText(this, "Οι άδειες Κάμερας και Δραστηριότητας είναι απαραίτητες!", Toast.LENGTH_LONG).show();
+            }
+        }
     }
 
     private void setupTTS() {
