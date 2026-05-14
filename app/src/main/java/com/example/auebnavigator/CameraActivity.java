@@ -10,6 +10,7 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.media.Image;
 import android.os.Bundle;
+import android.os.Vibrator;
 import android.speech.tts.TextToSpeech;
 import android.util.Log;
 import android.widget.TextView;
@@ -40,6 +41,7 @@ import java.util.concurrent.Executors;
 // 🔥 FIX 1: Προσθέσαμε το implements SensorEventListener εδώ!
 public class CameraActivity extends AppCompatActivity implements SensorEventListener {
 
+    private Vibrator vibrator;
     private TextToSpeech tts;
     private String startLocation;
     private String destination;
@@ -80,7 +82,7 @@ public class CameraActivity extends AppCompatActivity implements SensorEventList
                 Toast.makeText(this, "Το κινητό δεν έχει αισθητήρα βημάτων!", Toast.LENGTH_LONG).show();
             }
         }
-
+        vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
         viewFinder = findViewById(R.id.viewFinder);
         tvObstacleInfo = findViewById(R.id.textView);
 
@@ -262,9 +264,15 @@ public class CameraActivity extends AppCompatActivity implements SensorEventList
 
     // 🔥 ΝΕΑ HELPER ΜΕΘΟΔΟΣ: Τραβάει την επόμενη οδηγία από τη Λίστα
     private void startNextLeg() {
-        // Αν φτάσαμε στο τέλος της λίστας...
+        // Αν φτάσαμε στο τέλος της λίστας των οδηγιών...
         if (currentEdgeIndex >= currentPath.size()) {
-            isNavigating = false; // Τέλος πλοήγησης
+            isNavigating = false;
+
+            // 🔥 Δόνηση για 1 δευτερόλεπτο για να καταλάβει ότι ΕΦΤΑΣΕ
+            if (vibrator != null && vibrator.hasVibrator()) {
+                vibrator.vibrate(1000);
+            }
+
             speakText("Έφτασες στον τελικό προορισμό σου: " + destination);
             return;
         }
