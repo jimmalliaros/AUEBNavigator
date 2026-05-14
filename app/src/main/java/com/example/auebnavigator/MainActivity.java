@@ -244,32 +244,29 @@ public class MainActivity extends AppCompatActivity {
                         return;
                     }
 
-                    // --- CHECK 3: Πλοήγηση (Προορισμοί) ---
-                    if (spokenText.contains("πήγαινε") || spokenText.contains("θέλω να πάω") || spokenText.contains("πού είναι") || spokenText.contains("που ειναι")) {
-
-                        // Βρίσκουμε τον προορισμό
+                    // Μέσα στο onResults, στο σημείο // --- CHECK 3: Πλοήγηση ---
+                    if (spokenText.contains("πήγαινε") || spokenText.contains("θέλω να πάω") || spokenText.contains("πού είναι")) {
                         String destination = null;
-                        if (spokenText.contains("αμφιθέατρο α") || spokenText.contains("αμφιθεατρο α")) destination = "Αμφιθέατρο Α";
-                        else if (spokenText.contains("γραμματεία") || spokenText.contains("γραμματεια")) destination = "Γραμματεία";
-                        else if (spokenText.contains("κυλικείο") || spokenText.contains("κυλικειο")) destination = "Κυλικείο";
+
+                        if (spokenText.contains("τ 101") || spokenText.contains("101")) destination = "T101";
+                        else if (spokenText.contains("τ 102") || spokenText.contains("102")) destination = "T102";
+                        else if (spokenText.contains("τ 103") || spokenText.contains("103")) destination = "T103";
+                        else if (spokenText.contains("τουαλέτες") || spokenText.contains("τουαλετες")) destination = "Τουαλέτες";
+                        else if (spokenText.contains("ασανσέρ") || spokenText.contains("ασανσερ")) destination = "Ασανσέρ";
+                        else if (spokenText.contains("έξοδο κινδύνου") || spokenText.contains("εξοδο κινδυνου")) destination = "Έξοδος Κινδύνου";
 
                         if (destination != null) {
-                            // Έχουμε προορισμό. Ξέρουμε πού είναι ο χρήστης;
                             if (currentLocation == null) {
-                                // Δεν ξέρουμε. Τον ρωτάμε και αποθηκεύουμε πού θέλει να πάει.
                                 pendingDestination = destination;
                                 isWaitingForLocation = true;
-                                speakText("Πολύ ωραία. Για να σε κατευθύνω στο " + destination + ", πες μου πρώτα: Βρίσκεσαι στην κεντρική είσοδο ή κάπου αλλού;");
+                                // Αλλάζουμε την ερώτηση για να ταιριάζει στον όροφο
+                                speakText("Πολύ ωραία. Για να σε πάω στο " + destination + ", πες μου: Βρίσκεσαι στο κεφαλόσκαλο του πρώτου ορόφου;");
                             } else {
-                                // Ξέρουμε πού είναι! Του δίνουμε τις οδηγίες (θα το φτιάξουμε σε άλλη μέθοδο για καθαριότητα)
                                 provideNavigationInstructions(currentLocation, destination);
                             }
                         } else {
-                            speakText("Δεν αναγνώρισα τον προορισμό. Σε παρακαλώ, δοκίμασε ξανά.");
+                            speakText("Δεν αναγνώρισα αυτή την αίθουσα στον πρώτο όροφο. Δοκίμασε ξανά.");
                         }
-                    }
-                    else {
-                        speakText("Δεν κατάλαβα την εντολή σου. Μπορείς να πεις, για παράδειγμα, πήγαινέ με στο Αμφιθέατρο Α.");
                     }
                 }
             }
@@ -282,24 +279,20 @@ public class MainActivity extends AppCompatActivity {
     // Μέσα στο MainActivity.java
 
     private void handleLocationResponse(String spokenText) {
-        if (spokenText.contains("είσοδο") || spokenText.contains("εισοδο") || spokenText.contains("πατησίων")) {
-            currentLocation = "Κεντρική Είσοδος";
+        // Ελέγχουμε αν ο χρήστης επιβεβαίωσε ότι είναι στο κεφαλόσκαλο
+        if (spokenText.contains("ναι") || spokenText.contains("κεφαλόσκαλο") || spokenText.contains("σκάλα")) {
+            currentLocation = "Κεφαλόσκαλο"; // Αυτό πρέπει να είναι ολόιδιο με το όνομα στον AuebGraph
             isWaitingForLocation = false;
-            speakText("Τέλεια. Ξεκινάμε την πλοήγηση για το " + pendingDestination + ".");
+            speakText("Τέλεια. Ξεκινάμε την πλοήγηση για την αίθουσα " + pendingDestination + ".");
 
-            // 🔥 ΕΔΩ ΓΙΝΕΤΑΙ Η ΑΛΛΑΓΗ! Φτιάχνουμε το Intent για την CameraActivity
             Intent intent = new Intent(MainActivity.this, CameraActivity.class);
-            // "Πακετάρουμε" την αφετηρία και τον προορισμό μέσα στο Intent (σαν μεταβλητές)
             intent.putExtra("START_LOCATION", currentLocation);
             intent.putExtra("DESTINATION", pendingDestination);
 
-            pendingDestination = null; // Καθαρίζουμε για την επόμενη φορά
-
-            // Ανοίγουμε την CameraActivity με τη μέθοδο που κλείνει το μικρόφωνο
+            pendingDestination = null;
             closeMicAndNavigate(intent);
-
         } else {
-            speakText("Δεν κατάλαβα την τοποθεσία σου. Είσαι στην κεντρική είσοδο; Πες ναι ή όχι.");
+            speakText("Δεν κατάλαβα. Είσαι στο κεφαλόσκαλο του πρώτου ορόφου; Πες ναι ή όχι.");
         }
     }
 
