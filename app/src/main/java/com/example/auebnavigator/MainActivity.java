@@ -81,7 +81,7 @@ public class MainActivity extends AppCompatActivity {
                 int result = tts.setLanguage(new Locale("el", "GR"));
 
                 if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
-                    // 🔥 Εφαρμογή της ταχύτητας και στην αρχική οθόνη
+                    //  Εφαρμογή της ταχύτητας και στην αρχική οθόνη
                     float speed = getSharedPreferences("AuebNavPrefs", MODE_PRIVATE).getFloat("tts_speed", 1.0f);
                     tts.setSpeechRate(speed);
 
