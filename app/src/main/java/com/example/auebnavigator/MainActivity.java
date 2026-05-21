@@ -369,7 +369,16 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void onSwipeLeft() {
-        Toast.makeText(this, "Swipe Left", Toast.LENGTH_SHORT).show();
+        try {
+            if (vibrator != null && vibrator.hasVibrator()) {
+                vibrator.vibrate(30);
+            }
+            Intent intent = new Intent(MainActivity.this, SettingsActivity.class);
+            startActivity(intent);
+        } catch (Exception e) {
+            Log.e("NavigationError", "Δεν μπόρεσα να ανοίξω τα settings: " + e.getMessage());
+            Toast.makeText(this, "Πρόβλημα στο άνοιγμα των settings", Toast.LENGTH_SHORT).show();
+        }
     }
 
     @Override
