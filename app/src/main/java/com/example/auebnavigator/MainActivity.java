@@ -279,7 +279,7 @@ public class MainActivity extends AppCompatActivity {
             if (destination != null) {
                 pendingDestination = destination;
                 isWaitingForLocation = true;
-                speakText("Πολύ ωραία. Για να σε πάω στο " + destination + ", πες μου: Βρίσκεσαι στο κεφαλόσκαλο του πρώτου ορόφου;");
+                speakText("Πολύ ωραία. Για να σε πάω στο " + destination + ", πες μου: Βρίσκεσαι στην είσοδο του κτηρίου ή κάπου αλλού;");
                 return true;
             }
         }
