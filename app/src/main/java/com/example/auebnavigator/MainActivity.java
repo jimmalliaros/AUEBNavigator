@@ -231,7 +231,7 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    // 🔥 Η καρδιά του συστήματος. Επιστρέφει true αν βρήκε εντολή.
+    //  Η καρδιά του συστήματος. Επιστρέφει true αν βρήκε εντολή.
     private boolean checkAndExecuteCommand(String spokenText) {
         if (isWaitingForLocation) {
             if (spokenText.contains("ναι") || spokenText.contains("κεφαλόσκαλο") || spokenText.contains("σκάλα")) {
