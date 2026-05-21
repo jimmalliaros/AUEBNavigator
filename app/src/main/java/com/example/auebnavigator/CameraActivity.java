@@ -1,5 +1,8 @@
 package com.example.auebnavigator;
 
+import com.google.mlkit.vision.text.TextRecognition;
+import com.google.mlkit.vision.text.TextRecognizer;
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.Intent;
@@ -66,6 +69,9 @@ public class CameraActivity extends AppCompatActivity implements SensorEventList
     private List<AuebGraph.Edge> currentPath; // Η λίστα με τις οδηγίες του Α*
     private int currentEdgeIndex = 0; // Σε ποιο "κομμάτι" της διαδρομής βρισκόμαστε
 
+    private TextRecognizer textRecognizer;
+    private boolean isOcrMode = false;
+
 
     //----------------------------------------
 
@@ -105,6 +111,13 @@ public class CameraActivity extends AppCompatActivity implements SensorEventList
                 .build();
 
         objectDetector = ObjectDetection.getClient(options);
+        objectDetector = ObjectDetection.getClient(options);
+
+        //  Διαβάζουμε αν ο χρήστης είπε "σκάναρε"
+        isOcrMode = getIntent().getBooleanExtra("ENABLE_OCR", false);
+        //  Αρχικοποιούμε το AI του κειμένου
+        textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+
         cameraExecutor = Executors.newSingleThreadExecutor();
         // Αρχικοποιούμε τον Γράφο της ΑΣΟΕΕ
         auebGraph = new AuebGraph();
@@ -155,49 +168,64 @@ public class CameraActivity extends AppCompatActivity implements SensorEventList
     private void analyzeImage(@NonNull ImageProxy imageProxy) {
         Image mediaImage = imageProxy.getImage();
         if (mediaImage != null) {
-            int imageWidth = mediaImage.getWidth();
-            int imageHeight = mediaImage.getHeight();
-            float totalImageArea = imageWidth * imageHeight;
-
             InputImage image = InputImage.fromMediaImage(mediaImage, imageProxy.getImageInfo().getRotationDegrees());
 
-            objectDetector.process(image)
-                    .addOnSuccessListener(detectedObjects -> {
-                        boolean isCloseObstacleFound = false;
-                        String labelToSpeak = "";
-
-                        for (com.google.mlkit.vision.objects.DetectedObject obj : detectedObjects) {
-
-                            android.graphics.Rect boundingBox = obj.getBoundingBox();
-                            float objectArea = boundingBox.width() * boundingBox.height();
-                            float coveragePercentage = (objectArea / totalImageArea) * 100;
-
-                            if (coveragePercentage > 35.0f && !obj.getLabels().isEmpty()) {
-                                isCloseObstacleFound = true;
-                                String englishLabel = obj.getLabels().get(0).getText();
-                                labelToSpeak = translateLabel(englishLabel);
-
-                                String finalLabel = labelToSpeak;
-                                runOnUiThread(() -> tvObstacleInfo.setText("Κοντινό Εμπόδιο: " + finalLabel + " (" + (int)coveragePercentage + "%)"));
-
-                                break;
+            //  ΑΝ ΕΙΜΑΣΤΕ ΣΕ OCR MODE, ΤΡΕΧΕΙ ΜΟΝΟ ΑΥΤΟ!
+            if (isOcrMode) {
+                textRecognizer.process(image)
+                        .addOnSuccessListener(visionText -> {
+                            String recognizedText = visionText.getText().trim();
+                            if (!recognizedText.isEmpty()) {
+                                long currentTime = System.currentTimeMillis();
+                                if (currentTime - lastSpokenTime > 4000) { // 4 δευτερόλεπτα cooldown
+                                    speakText(recognizedText);
+                                    lastSpokenTime = currentTime;
+                                }
                             }
-                        }
+                        })
+                        .addOnFailureListener(e -> Log.e("MLKit", "Αποτυχία OCR", e))
+                        .addOnCompleteListener(task -> imageProxy.close()); // Κλείνουμε το frame!
+            }
+            //  ΑΛΛΙΩΣ, ΤΡΕΧΕΙ ΜΟΝΟ Η ΑΝΑΓΝΩΡΙΣΗ ΕΜΠΟΔΙΩΝ
+            else {
+                int imageWidth = mediaImage.getWidth();
+                int imageHeight = mediaImage.getHeight();
+                float totalImageArea = imageWidth * imageHeight;
 
-                        if (isCloseObstacleFound) {
-                            long currentTime = System.currentTimeMillis();
-                            if (currentTime - lastSpokenTime > 4000) {
-                                speakText("Προσοχή. Εμπόδιο στα δύο μέτρα. " + labelToSpeak);
-                                lastSpokenTime = currentTime;
+                objectDetector.process(image)
+                        .addOnSuccessListener(detectedObjects -> {
+                            boolean isCloseObstacleFound = false;
+                            String labelToSpeak = "";
+
+                            for (com.google.mlkit.vision.objects.DetectedObject obj : detectedObjects) {
+                                android.graphics.Rect boundingBox = obj.getBoundingBox();
+                                float objectArea = boundingBox.width() * boundingBox.height();
+                                float coveragePercentage = (objectArea / totalImageArea) * 100;
+
+                                if (coveragePercentage > 35.0f && !obj.getLabels().isEmpty()) {
+                                    isCloseObstacleFound = true;
+                                    String englishLabel = obj.getLabels().get(0).getText();
+                                    labelToSpeak = translateLabel(englishLabel);
+
+                                    String finalLabel = labelToSpeak;
+                                    runOnUiThread(() -> tvObstacleInfo.setText("Κοντινό Εμπόδιο: " + finalLabel + " (" + (int)coveragePercentage + "%)"));
+                                    break;
+                                }
                             }
-                        } else {
-                            runOnUiThread(() -> tvObstacleInfo.setText("Πορεία Καθαρή"));
-                        }
-                    })
-                    .addOnFailureListener(e -> Log.e("MLKit", "Αποτυχία", e))
-                    .addOnCompleteListener(task -> {
-                        imageProxy.close();
-                    });
+
+                            if (isCloseObstacleFound) {
+                                long currentTime = System.currentTimeMillis();
+                                if (currentTime - lastSpokenTime > 4000) {
+                                    speakText("Προσοχή. Εμπόδιο. " + labelToSpeak);
+                                    lastSpokenTime = currentTime;
+                                }
+                            } else {
+                                runOnUiThread(() -> tvObstacleInfo.setText("Πορεία Καθαρή"));
+                            }
+                        })
+                        .addOnFailureListener(e -> Log.e("MLKit", "Αποτυχία Εμποδίων", e))
+                        .addOnCompleteListener(task -> imageProxy.close()); // Κλείνουμε το frame!
+            }
         }
     }
 

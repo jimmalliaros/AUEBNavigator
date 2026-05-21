@@ -24,20 +24,14 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.view.GestureDetectorCompat;
-
 import java.util.ArrayList;
 
 public class MainActivity extends AppCompatActivity {
 
-    // Κρατάει την τωρινή τοποθεσία του χρήστη (π.χ. "είσοδος", "πρώτος όροφος").
-    // Το null σημαίνει ότι δεν ξέρουμε ακόμα.
     private String currentLocation = null;
-
-    // Ένα flag που μας λέει αν η εφαρμογή περιμένει απάντηση για το πού βρίσκεται ο χρήστης.
     private boolean isWaitingForLocation = false;
-
-    // Κρατάει τον προορισμό που ζήτησε ο χρήστης, για να τον θυμόμαστε αφού μας πει πού είναι.
     private String pendingDestination = null;
+    private boolean isProcessingCommand = false; // Προστασία για να μην εκτελείται 2 φορές η ίδια εντολή
 
     private TextToSpeech tts;
     private ToneGenerator toneGen;
@@ -49,7 +43,6 @@ public class MainActivity extends AppCompatActivity {
     private SpeechRecognizer speechRecognizer;
     private Intent speechIntent;
     private static final int RECORD_AUDIO_PERMISSION_CODE = 100;
-
 
     @SuppressLint("ClickableViewAccessibility")
     @Override
@@ -63,15 +56,48 @@ public class MainActivity extends AppCompatActivity {
 
         setupSpeechRecognizer();
 
-        // ✅ FIX Bug 3: Περνάμε τα touch events του κουμπιού στον GestureDetector
-        // ώστε τα swipe που ξεκινούν πάνω στο κουμπί να λειτουργούν κανονικά
         btnMic.setOnTouchListener((v, event) -> {
-            gestureDetector.onTouchEvent(event);
-            // Επιτρέπουμε στο κουμπί να χειριστεί και αυτό το event (click)
+            if (gestureDetector.onTouchEvent(event)) {
+                return true;
+            }
             return false;
         });
 
-        btnMic.setOnClickListener(v -> handleMicClick());
+        //  Ο ΕΞΥΠΝΟΣ ΜΗΧΑΝΙΣΜΟΣ ΠΟΥ ΞΕΧΩΡΙΖΕΙ ΤΟ CLICK ΑΠΟ ΤΟ SWIPE
+        btnMic.setOnTouchListener(new View.OnTouchListener() {
+            private float startX, startY;
+            private boolean isSwipe = false;
+
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                // Πρώτα δίνουμε το άγγιγμα στον ανιχνευτή για να δει αν είναι Swipe
+                gestureDetector.onTouchEvent(event);
+
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        // Μόλις ακουμπήσει το δάχτυλο, κρατάμε τις συντεταγμένες
+                        startX = event.getX();
+                        startY = event.getY();
+                        isSwipe = false;
+                        return true; // Κρατάμε το άγγιγμα "ζωντανό"
+
+                    case MotionEvent.ACTION_MOVE:
+                        // Αν το δάχτυλο κουνηθεί πάνω από 50 pixels, το θεωρούμε Swipe!
+                        if (Math.abs(event.getX() - startX) > 50 || Math.abs(event.getY() - startY) > 50) {
+                            isSwipe = true;
+                        }
+                        break;
+
+                    case MotionEvent.ACTION_UP:
+                        // Όταν σηκωθεί το δάχτυλο, αν ΔΕΝ ήταν swipe, τρέχουμε το μικρόφωνο (Απλό Click)
+                        if (!isSwipe) {
+                            handleMicClick();
+                        }
+                        break;
+                }
+                return true;
+            }
+        });
 
         pulseAnim = android.view.animation.AnimationUtils.loadAnimation(this, R.anim.pulse);
         toneGen = new ToneGenerator(AudioManager.STREAM_MUSIC, 100);
@@ -79,42 +105,43 @@ public class MainActivity extends AppCompatActivity {
         tts = new TextToSpeech(this, status -> {
             if (status == TextToSpeech.SUCCESS) {
                 int result = tts.setLanguage(new Locale("el", "GR"));
-
                 if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
-                    //  Εφαρμογή της ταχύτητας και στην αρχική οθόνη
                     float speed = getSharedPreferences("AuebNavPrefs", MODE_PRIVATE).getFloat("tts_speed", 1.0f);
                     tts.setSpeechRate(speed);
-
                     speakText("To σύστημα πλοήγησης είναι έτοιμο!.");
                 }
             }
+        });
+
+        // Κλικ στα εικονίδια της κάτω μπάρας
+        findViewById(R.id.nav_camera).setOnClickListener(v -> {
+            if (vibrator != null && vibrator.hasVibrator()) vibrator.vibrate(30);
+            startActivity(new Intent(MainActivity.this, CameraActivity.class));
+        });
+
+        findViewById(R.id.nav_settings).setOnClickListener(v -> {
+            if (vibrator != null && vibrator.hasVibrator()) vibrator.vibrate(30);
+            startActivity(new Intent(MainActivity.this, SettingsActivity.class));
         });
     }
 
     private void speakText(String text) {
         if (tts != null) {
-            // Το QUEUE_FLUSH σημαίνει ότι αν μιλάει ήδη, το κόβει και λέει το καινούργιο αμέσως
             tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
         }
     }
 
-    // ✅ FIX Bug 2: Επιστρέφουμε το αποτέλεσμα του gestureDetector
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        boolean gestureResult = gestureDetector.onTouchEvent(event);
-        return gestureResult || super.onTouchEvent(event);
+        return gestureDetector.onTouchEvent(event) || super.onTouchEvent(event);
     }
 
-    // ✅ FIX Bug 5: Επανεκκίνηση recognizer όταν επιστρέφει η activity
     @Override
     protected void onResume() {
         super.onResume();
-        if (speechRecognizer == null) {
-            setupSpeechRecognizer();
-        }
+        if (speechRecognizer == null) setupSpeechRecognizer();
     }
 
-    // ✅ FIX Bug 6: Σταματάμε το speech recognition όταν φεύγει η activity
     @Override
     protected void onStop() {
         super.onStop();
@@ -122,18 +149,11 @@ public class MainActivity extends AppCompatActivity {
             speechRecognizer.stopListening();
             speechRecognizer.cancel();
         }
-        if (btnMic != null) {
-            btnMic.clearAnimation();
-        }
+        if (btnMic != null) btnMic.clearAnimation();
     }
 
-    // --- ΛΟΓΙΚΗ ΜΙΚΡΟΦΩΝΟΥ ΚΑΙ ΑΔΕΙΩΝ ---
-
     private void handleMicClick() {
-        if (vibrator != null && vibrator.hasVibrator()) {
-            vibrator.vibrate(50);
-        }
-
+        if (vibrator != null && vibrator.hasVibrator()) vibrator.vibrate(50);
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             startListeningNow();
         } else {
@@ -142,12 +162,11 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startListeningNow() {
+        isProcessingCommand = false;
         if (speechRecognizer != null && speechIntent != null) {
             speechRecognizer.cancel();
             speechRecognizer.startListening(speechIntent);
         } else {
-            Toast.makeText(this, "Σφάλμα: Το μικρόφωνο δεν είναι έτοιμο.", Toast.LENGTH_SHORT).show();
-            // Επανεκκίνηση recognizer αν δεν είναι έτοιμος
             setupSpeechRecognizer();
         }
     }
@@ -155,19 +174,13 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == RECORD_AUDIO_PERMISSION_CODE) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                startListeningNow();
-            } else {
-                Toast.makeText(this, "Η πρόσβαση στο μικρόφωνο είναι απαραίτητη!", Toast.LENGTH_LONG).show();
-            }
+        if (requestCode == RECORD_AUDIO_PERMISSION_CODE && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            startListeningNow();
         }
     }
 
     private void setupSpeechRecognizer() {
-        if (speechRecognizer != null) {
-            speechRecognizer.destroy();
-        }
+        if (speechRecognizer != null) speechRecognizer.destroy();
 
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
         speechIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
@@ -179,252 +192,143 @@ public class MainActivity extends AppCompatActivity {
             public void onReadyForSpeech(Bundle params) {
                 btnMic.startAnimation(pulseAnim);
                 toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 150);
-                // Προαιρετικό: Ένα μικρό Toast για να ξέρεις ότι ξεκίνησε
-                Toast.makeText(MainActivity.this, "Σε ακούω...", Toast.LENGTH_SHORT).show();
             }
-
             @Override public void onBeginningOfSpeech() { }
             @Override public void onRmsChanged(float rmsdB) { }
             @Override public void onBufferReceived(byte[] buffer) { }
             @Override public void onEndOfSpeech() { btnMic.clearAnimation(); }
-
             @Override
             public void onError(int error) {
                 btnMic.clearAnimation();
-
-                // 🔥 FIX: Αν το σφάλμα είναι Client (5), απλά το κάνουμε ignore και σταματάμε την εκτέλεση
-                if (error == SpeechRecognizer.ERROR_CLIENT) {
-                    Log.d("Speech", "Client error αγνοήθηκε λόγω αλλαγής activity.");
-                    return;
-                }
-
-                // Για τα υπόλοιπα σφάλματα (π.χ. timeout) δείχνουμε το Toast
-                String errorMsg = getSpeechErrorMessage(error);
-                Toast.makeText(MainActivity.this, "Σφάλμα: " + errorMsg, Toast.LENGTH_SHORT).show();
-
-                // Επανεκκίνηση για το επόμενο κλικ
+                if (error == SpeechRecognizer.ERROR_CLIENT) return;
                 new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                    if (!isFinishing()) {
-                        setupSpeechRecognizer();
-                    }
+                    if (!isFinishing()) setupSpeechRecognizer();
                 }, 500);
             }
 
-            // --- ΕΔΩ ΕΙΝΑΙ Η ΑΛΛΑΓΗ ΠΟΥ ΘΕΣ ---
-
             @Override
             public void onPartialResults(Bundle partialResults) {
-                // Την αφήνουμε άδεια για να μην εμφανίζει τίποτα όσο μιλάς
+                if (isProcessingCommand) return;
+                ArrayList<String> matches = partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                if (matches != null && !matches.isEmpty()) {
+                    if (checkAndExecuteCommand(matches.get(0).toLowerCase())) {
+                        isProcessingCommand = true;
+                        speechRecognizer.cancel();
+                        btnMic.clearAnimation();
+                    }
+                }
             }
 
             @Override
             public void onResults(Bundle results) {
+                if (isProcessingCommand) return;
                 ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                 if (matches != null && !matches.isEmpty()) {
-                    String spokenText = matches.get(0).toLowerCase();
-                    Log.d("Speech", "Ο χρήστης είπε: " + spokenText);
-
-                    // --- CHECK 1: Περιμένουμε τοποθεσία; ---
-                    if (isWaitingForLocation) {
-                        handleLocationResponse(spokenText);
-                        return; // Σταματάμε εδώ, μην πάει παρακάτω
-                    }
-
-                    // --- CHECK 2: Κάμερα ---
-                    boolean wantsCamera = spokenText.contains("κάμερα") || spokenText.contains("καμερα");
-                    boolean wantsOpen = spokenText.contains("άνοιξε") || spokenText.contains("ανοιξε");
-
-                    if (wantsCamera && wantsOpen) {
-                        speakText("Ανοίγω την κάμερα.");
-                        closeMicAndNavigate(new Intent(MainActivity.this, CameraActivity.class));
-                        return;
-                    }
-
-                    // Μέσα στο onResults, στο σημείο // --- CHECK 3: Πλοήγηση ---
-                    if (spokenText.contains("πήγαινε") || spokenText.contains("θέλω να πάω") || spokenText.contains("πού είναι")) {
-                        String destination = null;
-
-                        if (spokenText.contains("τ 101") || spokenText.contains("101")) destination = "T101";
-                        else if (spokenText.contains("τ 102") || spokenText.contains("102")) destination = "T102";
-                        else if (spokenText.contains("τ 103") || spokenText.contains("103")) destination = "T103";
-                        else if (spokenText.contains("τουαλέτες") || spokenText.contains("τουαλετες")) destination = "Τουαλέτες";
-                        else if (spokenText.contains("ασανσέρ") || spokenText.contains("ασανσερ")) destination = "Ασανσέρ";
-                        else if (spokenText.contains("έξοδο κινδύνου") || spokenText.contains("εξοδο κινδυνου")) destination = "Έξοδος Κινδύνου";
-
-                        if (destination != null) {
-                            if (currentLocation == null) {
-                                pendingDestination = destination;
-                                isWaitingForLocation = true;
-                                // Αλλάζουμε την ερώτηση για να ταιριάζει στον όροφο
-                                speakText("Πολύ ωραία. Για να σε πάω στο " + destination + ", πες μου: Βρίσκεσαι στο κεφαλόσκαλο του πρώτου ορόφου;");
-                            } else {
-                                provideNavigationInstructions(currentLocation, destination);
-                            }
-                        } else {
-                            speakText("Δεν αναγνώρισα αυτή την αίθουσα στον πρώτο όροφο. Δοκίμασε ξανά.");
-                        }
-                    }
+                    checkAndExecuteCommand(matches.get(0).toLowerCase());
                 }
             }
-
             @Override public void onEvent(int eventType, Bundle params) { }
         });
     }
 
-    // Επεξεργάζεται την απάντηση του χρήστη για το πού βρίσκεται
-    // Μέσα στο MainActivity.java
+    // 🔥 Η καρδιά του συστήματος. Επιστρέφει true αν βρήκε εντολή.
+    private boolean checkAndExecuteCommand(String spokenText) {
+        if (isWaitingForLocation) {
+            if (spokenText.contains("ναι") || spokenText.contains("κεφαλόσκαλο") || spokenText.contains("σκάλα")) {
+                currentLocation = "Κεφαλόσκαλο";
+                isWaitingForLocation = false;
+                speakText("Τέλεια. Ξεκινάμε την πλοήγηση για την αίθουσα " + pendingDestination + ".");
+                Intent intent = new Intent(MainActivity.this, CameraActivity.class);
+                intent.putExtra("START_LOCATION", currentLocation);
+                intent.putExtra("DESTINATION", pendingDestination);
+                pendingDestination = null;
+                closeMicAndNavigate(intent);
+                return true;
+            } else if (spokenText.contains("όχι") || spokenText.contains("οχι")) {
+                speakText("Εντάξει, η πλοήγηση ακυρώθηκε.");
+                isWaitingForLocation = false;
+                pendingDestination = null;
+                return true;
+            }
+            return false;
+        }
 
-    private void handleLocationResponse(String spokenText) {
-        // Ελέγχουμε αν ο χρήστης επιβεβαίωσε ότι είναι στο κεφαλόσκαλο
-        if (spokenText.contains("ναι") || spokenText.contains("κεφαλόσκαλο") || spokenText.contains("σκάλα")) {
-            currentLocation = "Κεφαλόσκαλο"; // Αυτό πρέπει να είναι ολόιδιο με το όνομα στον AuebGraph
-            isWaitingForLocation = false;
-            speakText("Τέλεια. Ξεκινάμε την πλοήγηση για την αίθουσα " + pendingDestination + ".");
-
+        if (spokenText.contains("σκάναρε") || spokenText.contains("σκαναρε")) {
+            speakText("Λειτουργία σάρωσης κειμένου ενεργή. Σήκωσε την κάμερα.");
             Intent intent = new Intent(MainActivity.this, CameraActivity.class);
-            intent.putExtra("START_LOCATION", currentLocation);
-            intent.putExtra("DESTINATION", pendingDestination);
-
-            pendingDestination = null;
+            intent.putExtra("ENABLE_OCR", true);
             closeMicAndNavigate(intent);
-        } else {
-            speakText("Δεν κατάλαβα. Είσαι στο κεφαλόσκαλο του πρώτου ορόφου; Πες ναι ή όχι.");
+            return true;
         }
-    }
 
-    // Η "Καρδιά" του routing: Δίνει διαφορετικές οδηγίες ανάλογα με την αφετηρία
-    private void provideNavigationInstructions(String start, String end) {
-        if (start.equals("Κεντρική Είσοδος") && end.equals("Αμφιθέατρο Α")) {
-            speakText("Από την κεντρική είσοδο: Προχώρα ευθεία, πέρνα τις κεντρικές σκάλες, και θα βρεις το Αμφιθέατρο Α στα δεξιά σου.");
+        if ((spokenText.contains("κάμερα") || spokenText.contains("καμερα")) && (spokenText.contains("άνοιξε") || spokenText.contains("ανοιξε"))) {
+            speakText("Ανοίγω την κάμερα.");
+            closeMicAndNavigate(new Intent(MainActivity.this, CameraActivity.class));
+            return true;
         }
-        else if (start.equals("Κεντρική Είσοδος") && end.equals("Γραμματεία")) {
-            speakText("Από την κεντρική είσοδο: Πήγαινε στα αριστερά σου για να βρεις το ασανσέρ. Ανέβα στον τρίτο όροφο.");
-        }
-        else if (start.equals("Κεντρική Είσοδος") && end.equals("Κυλικείο")) {
-            speakText("Από την κεντρική είσοδο: Προχώρα ευθεία μέχρι το τέλος του διαδρόμου. Το κυλικείο είναι ακριβώς μπροστά σου.");
-        }
-        // Εδώ μπορείς να προσθέσεις όσους συνδυασμούς θες!
-    }
-    // ✅ Helper: Μετατρέπει τον κωδικό σφάλματος σε ανθρώπινο μήνυμα
-    private String getSpeechErrorMessage(int errorCode) {
-        switch (errorCode) {
-            case SpeechRecognizer.ERROR_AUDIO: return "Σφάλμα ήχου";
-            case SpeechRecognizer.ERROR_CLIENT: return "Σφάλμα client";
-            case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS: return "Δεν υπάρχουν άδειες (RECORD_AUDIO ή INTERNET)";
-            case SpeechRecognizer.ERROR_NETWORK: return "Σφάλμα δικτύου - έλεγξε το internet";
-            case SpeechRecognizer.ERROR_NETWORK_TIMEOUT: return "Timeout δικτύου";
-            case SpeechRecognizer.ERROR_NO_MATCH: return "Δεν βρέθηκε αντιστοιχία";
-            case SpeechRecognizer.ERROR_RECOGNIZER_BUSY: return "Ο recognizer είναι απασχολημένος";
-            case SpeechRecognizer.ERROR_SERVER: return "Σφάλμα server";
-            case SpeechRecognizer.ERROR_SPEECH_TIMEOUT: return "Δεν εντοπίστηκε ομιλία";
-            default: return "Άγνωστο σφάλμα (" + errorCode + ")";
-        }
-    }
 
-    // --- ΛΟΓΙΚΗ SWIPING ---
+        if (spokenText.contains("πήγαινε") || spokenText.contains("θέλω να πάω") || spokenText.contains("πού είναι")) {
+            String destination = null;
+            if (spokenText.contains("τ 101") || spokenText.contains("101")) destination = "T101";
+            else if (spokenText.contains("τ 102") || spokenText.contains("102")) destination = "T102";
+            else if (spokenText.contains("τ 103") || spokenText.contains("103")) destination = "T103";
+            else if (spokenText.contains("τουαλέτες") || spokenText.contains("τουαλετες")) destination = "Τουαλέτες";
+            else if (spokenText.contains("ασανσέρ") || spokenText.contains("ασανσερ")) destination = "Ασανσέρ";
+            else if (spokenText.contains("έξοδο κινδύνου") || spokenText.contains("εξοδο κινδυνου")) destination = "Έξοδος Κινδύνου";
+
+            if (destination != null) {
+                pendingDestination = destination;
+                isWaitingForLocation = true;
+                speakText("Πολύ ωραία. Για να σε πάω στο " + destination + ", πες μου: Βρίσκεσαι στο κεφαλόσκαλο του πρώτου ορόφου;");
+                return true;
+            }
+        }
+        return false;
+    }
 
     private class SwipeListener extends GestureDetector.SimpleOnGestureListener {
-        private static final int SWIPE_THRESHOLD = 100;
-        private static final int SWIPE_VELOCITY_THRESHOLD = 100;
+        @Override
+        public boolean onDown(MotionEvent e) { return true; }
 
         @Override
         public boolean onFling(MotionEvent e1, @NonNull MotionEvent e2, float velocityX, float velocityY) {
-            boolean result = false;
-            try {
-                float diffY = e2.getY() - e1.getY();
-                float diffX = e2.getX() - e1.getX();
+            if (e1 == null || e2 == null) return false;
+            float diffX = e2.getX() - e1.getX();
+            float diffY = e2.getY() - e1.getY();
 
-                if (Math.abs(diffX) > Math.abs(diffY)) {
-                    if (Math.abs(diffX) > SWIPE_THRESHOLD && Math.abs(velocityX) > SWIPE_VELOCITY_THRESHOLD) {
-                        if (diffX > 0) {
-                            onSwipeRight();
-                        } else {
-                            onSwipeLeft();
-                        }
-                        result = true;
-                    }
+            if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 100 && Math.abs(velocityX) > 100) {
+                if (diffX > 0) {
+                    if (vibrator != null && vibrator.hasVibrator()) vibrator.vibrate(30);
+                    startActivity(new Intent(MainActivity.this, SettingsActivity.class));
+                } else {
+                    if (vibrator != null && vibrator.hasVibrator()) vibrator.vibrate(30);
+                    startActivity(new Intent(MainActivity.this, CameraActivity.class));
                 }
-            } catch (Exception exception) {
-                exception.printStackTrace();
+                return true;
             }
-            return result;
-        }
-    }
-
-    private void onSwipeRight() {
-        try {
-            if (vibrator != null && vibrator.hasVibrator()) {
-                vibrator.vibrate(30);
-            }
-            Intent intent = new Intent(MainActivity.this, CameraActivity.class);
-            startActivity(intent);
-        } catch (Exception e) {
-            Log.e("NavigationError", "Δεν μπόρεσα να ανοίξω την κάμερα: " + e.getMessage());
-            Toast.makeText(this, "Πρόβλημα στο άνοιγμα της κάμερας", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    private void onSwipeLeft() {
-        try {
-            if (vibrator != null && vibrator.hasVibrator()) {
-                vibrator.vibrate(30);
-            }
-            Intent intent = new Intent(MainActivity.this, SettingsActivity.class);
-            startActivity(intent);
-        } catch (Exception e) {
-            Log.e("NavigationError", "Δεν μπόρεσα να ανοίξω τα settings: " + e.getMessage());
-            Toast.makeText(this, "Πρόβλημα στο άνοιγμα των settings", Toast.LENGTH_SHORT).show();
+            return false;
         }
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (speechRecognizer != null) {
-            speechRecognizer.destroy();
-            speechRecognizer = null;
-        }
-        if (toneGen != null) {
-            toneGen.release();
-        }
-        // Καθαρισμός του TTS
-        if (tts != null) {
-            tts.stop();
-            tts.shutdown();
-        }
+        if (speechRecognizer != null) speechRecognizer.destroy();
+        if (toneGen != null) toneGen.release();
+        if (tts != null) { tts.stop(); tts.shutdown(); }
     }
 
-    // Κάνουμε "Hijack" τα πατήματα των φυσικών κουμπιών
     @Override
     public boolean onKeyDown(int keyCode, android.view.KeyEvent event) {
-        // Αν το κουμπί που πατήθηκε είναι το Volume Up
-        if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP) {
-
-            // Το event.getRepeatCount() == 0 εξασφαλίζει ότι θα πιάσει μόνο
-            // το πρώτο πάτημα, και όχι τα συνεχόμενα αν το κρατάει πατημένο
-            if (event.getRepeatCount() == 0) {
-                Log.d("HardwareTrigger", "Πατήθηκε το Volume Up - Ενεργοποίηση μικροφώνου");
-
-                // Προσομοιώνουμε το πάτημα του ψηφιακού κουμπιού
-                handleMicClick();
-            }
-
-            // Επιστρέφουμε true για να πούμε στο Android:
-            // "Το χειρίστηκα εγώ, μην δυναμώσεις την ένταση του ήχου"
+        if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP && event.getRepeatCount() == 0) {
+            handleMicClick();
             return true;
         }
-
-        // Αν πατήθηκε οποιοδήποτε άλλο κουμπί (π.χ. back button),
-        // αφήνουμε το Android να κάνει τη δουλειά του
         return super.onKeyDown(keyCode, event);
     }
 
-    // Μέθοδος που κλείνει το μικρόφωνο και αλλάζει οθόνη με ασφάλεια
     private void closeMicAndNavigate(Intent intent) {
-        if (speechRecognizer != null) {
-            speechRecognizer.cancel();
-        }
-        // Δίνουμε 1.5 δευτερόλεπτο στο TTS να μιλήσει πριν αλλάξει η οθόνη
+        if (speechRecognizer != null) speechRecognizer.cancel();
         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> startActivity(intent), 1500);
     }
 }
