@@ -82,12 +82,12 @@ public class SettingsActivity extends AppCompatActivity {
                 float diffX = e2.getX() - e1.getX();
                 if (Math.abs(diffX) > 120 && Math.abs(velocityX) > 120) {
                     if (diffX < 0) {
-                        // Swipe Αριστερά: Πάμε στο Main Activity
-                        startActivity(new Intent(SettingsActivity.this, MainActivity.class));
+                        // Swipe Δεξιά: Πάμε στο Main Activity
+                        startActivity(new Intent(SettingsActivity.this, CameraActivity.class));
                         finish();
                     } else {
-                        // Swipe Δεξιά: Πάμε στην Κάμερα (Κυκλική πλοήγηση)
-                        startActivity(new Intent(SettingsActivity.this, CameraActivity.class));
+                        // Swipe Αριστερά: Πάμε στην Κάμερα (Κυκλική πλοήγηση)
+                        startActivity(new Intent(SettingsActivity.this, MainActivity.class));
                         finish();
                     }
                     return true;
@@ -97,7 +97,7 @@ public class SettingsActivity extends AppCompatActivity {
         });
     } // <-- ΕΔΩ κλείνει σωστά η onCreate()!
 
-    // 🔥 Η onTouchEvent βγήκε ΕΞΩ από την onCreate() και είναι αυτόνομη
+    //  Η onTouchEvent βγήκε ΕΞΩ από την onCreate() και είναι αυτόνομη
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         return gestureDetector.onTouchEvent(event) || super.onTouchEvent(event);

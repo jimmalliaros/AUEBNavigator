@@ -240,6 +240,11 @@ public class CameraActivity extends AppCompatActivity implements SensorEventList
         tts = new TextToSpeech(this, status -> {
             if (status == TextToSpeech.SUCCESS) {
                 tts.setLanguage(new Locale("el", "GR"));
+
+                //  ΕΔΩ ΕΙΝΑΙ Η ΕΝΣΩΜΑΤΩΣΗ ΤΗΣ ΤΑΧΥΤΗΤΑΣ:
+                float speed = getSharedPreferences("AuebNavPrefs", MODE_PRIVATE).getFloat("tts_speed", 1.0f);
+                tts.setSpeechRate(speed);
+
                 startNavigationSequence();
             }
         });

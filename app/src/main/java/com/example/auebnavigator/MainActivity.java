@@ -78,19 +78,15 @@ public class MainActivity extends AppCompatActivity {
 
         tts = new TextToSpeech(this, status -> {
             if (status == TextToSpeech.SUCCESS) {
-                // Ορίζουμε τα Ελληνικά
                 int result = tts.setLanguage(new Locale("el", "GR"));
 
-                if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    Log.e("TTS", "Η Ελληνική γλώσσα δεν υποστηρίζεται ή λείπει από το κινητό.");
-                    Toast.makeText(this, "Πρέπει να κατεβάσεις τα Ελληνικά στις ρυθμίσεις TTS του κινητού!", Toast.LENGTH_LONG).show();
-                } else {
-                    Log.d("TTS", "Το Text-To-Speech είναι έτοιμο!");
-                    // Μπορείς να βάλεις να λέει ένα χαιρετισμό μόλις ανοίγει το app
+                if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
+                    // 🔥 Εφαρμογή της ταχύτητας και στην αρχική οθόνη
+                    float speed = getSharedPreferences("AuebNavPrefs", MODE_PRIVATE).getFloat("tts_speed", 1.0f);
+                    tts.setSpeechRate(speed);
+
                     speakText("To σύστημα πλοήγησης είναι έτοιμο!.");
                 }
-            } else {
-                Log.e("TTS", "Η αρχικοποίηση του TTS απέτυχε.");
             }
         });
     }
