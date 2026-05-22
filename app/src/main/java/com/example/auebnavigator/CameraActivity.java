@@ -283,25 +283,29 @@ public class CameraActivity extends AppCompatActivity implements SensorEventList
         currentPath = auebGraph.findPathAStar(startLocation, destination);
 
         if (currentPath == null || currentPath.isEmpty()) {
-            speakText("Συγγνώμη, δεν βρέθηκε διαδρομή από το " + startLocation + " προς το " + destination);
+            speakText("Συγγνώμη, δεν βρέθηκε διαδρομή από το σημείο " + startLocation + " προς το σημείο " + destination);
             return;
         }
 
-        speakText("Η διαδρομή υπολογίστηκε. Ανίχνευση εμποδίων ενεργή. Ξεκινάμε.");
         isNavigating = true;
         currentEdgeIndex = 0;
 
-        // Καλούμε την πρώτη οδηγία!
-        startNextLeg();
+        // Διαβάζουμε την 1η οδηγία και τη συνδυάζουμε με το αρχικό μήνυμα
+        AuebGraph.Edge firstEdge = currentPath.get(currentEdgeIndex);
+        targetSteps = firstEdge.steps;
+        currentSteps = 0;
+
+        speakText("Η διαδρομή υπολογίστηκε. Ξεκινάμε. " + firstEdge.instruction);
+
+        currentEdgeIndex++; // Προχωράμε τον δείκτη για την επόμενη κλήση
     }
 
-    // 🔥 ΝΕΑ HELPER ΜΕΘΟΔΟΣ: Τραβάει την επόμενη οδηγία από τη Λίστα
     private void startNextLeg() {
-        // Αν φτάσαμε στο τέλος της λίστας των οδηγιών...
+        // Έλεγχος αν φτάσαμε στο τέλος της λίστας οδηγιών
         if (currentEdgeIndex >= currentPath.size()) {
             isNavigating = false;
 
-            // 🔥 Δόνηση για 1 δευτερόλεπτο για να καταλάβει ότι ΕΦΤΑΣΕ
+            // Δόνηση για επιβεβαίωση άφιξης
             if (vibrator != null && vibrator.hasVibrator()) {
                 vibrator.vibrate(1000);
             }
@@ -310,18 +314,21 @@ public class CameraActivity extends AppCompatActivity implements SensorEventList
             return;
         }
 
-        // Διαβάζουμε την τωρινή Ακμή
+        // Εντοπισμός του κόμβου στον οποίο μόλις έφτασε ο χρήστης
+        String justReachedNode = currentPath.get(currentEdgeIndex - 1).targetNode;
+
+        // Διαβάζουμε την επόμενη ακμή/οδηγία
         AuebGraph.Edge nextEdge = currentPath.get(currentEdgeIndex);
+        targetSteps = nextEdge.steps;
+        currentSteps = 0;
 
-        targetSteps = nextEdge.steps; // Βάζουμε νέο στόχο βημάτων!
-        currentSteps = 0; // Μηδενίζουμε τα παλιά βήματα
+        // Συνδυάζουμε την ενημέρωση άφιξης με την επόμενη οδηγία
+        speakText("Βρίσκεσαι στο σημείο " + justReachedNode + ". " + nextEdge.instruction);
 
-        speakText(nextEdge.instruction); // Του λέμε τι να κάνει (π.χ. "Στρίψε αριστερά")
-
-        currentEdgeIndex++; // Πάμε στο επόμενο "κομμάτι" για την επόμενη φορά
+        currentEdgeIndex++;
     }
 
-    // 🔥 FIX 2: Έκλεισα τη μέθοδο speakText κανονικά!
+    //  FIX 2: Έκλεισα τη μέθοδο speakText κανονικά!
     private void speakText(String text) {
         if (tts != null) {
             tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
