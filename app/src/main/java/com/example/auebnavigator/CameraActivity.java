@@ -13,6 +13,8 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.media.Image;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Vibrator;
 import android.speech.tts.TextToSpeech;
 import android.util.Log;
@@ -41,87 +43,62 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-// 🔥 FIX 1: Προσθέσαμε το implements SensorEventListener εδώ!
 public class CameraActivity extends AppCompatActivity implements SensorEventListener {
 
     private Vibrator vibrator;
     private TextToSpeech tts;
+    private boolean isTtsReady = false; // 🔥 ΦΛΑΓΚ ΑΣΦΑΛΕΙΑΣ: Για να ξέρουμε πότε είναι 100% έτοιμο το TTS
+
     private String startLocation;
     private String destination;
 
     private PreviewView viewFinder;
     private TextView tvObstacleInfo;
 
-    // --- Μεταβλητές Βηματομετρητή ---
+    // --- Μεταβλητές Custom Βηματομετρητή (Accelerometer) ---
     private SensorManager sensorManager;
-    private Sensor stepDetectorSensor;
+    private Sensor accelerometerSensor;
     private int currentSteps = 0;
     private int targetSteps = 15;
     private boolean isNavigating = false;
+    private long lastStepTime = 0;
 
     private static final int CAMERA_PERMISSION_CODE = 200;
     private ExecutorService cameraExecutor;
     private ObjectDetector objectDetector;
     private long lastSpokenTime = 0;
-    // --- Μεταβλητές Γράφου & Διαδρομής ---
-    private AuebGraph auebGraph;
 
-    private List<AuebGraph.Edge> currentPath; // Η λίστα με τις οδηγίες του Α*
-    private int currentEdgeIndex = 0; // Σε ποιο "κομμάτι" της διαδρομής βρισκόμαστε
+    private AuebGraph auebGraph;
+    private List<AuebGraph.Edge> currentPath;
+    private int currentEdgeIndex = 0;
 
     private TextRecognizer textRecognizer;
     private boolean isOcrMode = false;
-
-
-    //----------------------------------------
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_camera);
 
-        // Αρχικοποίηση Sensor Manager
-        sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
-        if (sensorManager != null) {
-            stepDetectorSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR);
-            if (stepDetectorSensor == null) {
-                Toast.makeText(this, "Το κινητό δεν έχει αισθητήρα βημάτων!", Toast.LENGTH_LONG).show();
-            }
-        }
+        // 1. ΑΡΧΙΚΟΠΟΙΗΣΗ GUI
         vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
         viewFinder = findViewById(R.id.viewFinder);
         tvObstacleInfo = findViewById(R.id.textView);
 
-        // Ο ΣΩΣΤΟΣ ΕΛΕΓΧΟΣ ΣΤΟ ΤΕΛΟΣ ΤΗΣ onCreate:
-        if (allPermissionsGranted()) {
-            startCamera();
-            setupTTS();
-        } else {
-            // Αν λείπει έστω και μία άδεια, ζητάμε και τις δύο ταυτόχρονα!
-            ActivityCompat.requestPermissions(this, new String[]{
-                    Manifest.permission.CAMERA,
-                    Manifest.permission.ACTIVITY_RECOGNITION
-            }, CAMERA_PERMISSION_CODE);
-        }
+        // 2. ΑΡΧΙΚΟΠΟΙΗΣΗ ΕΡΓΑΛΕΙΩΝ ΚΑΙ ΓΡΑΦΟΥ
+        cameraExecutor = Executors.newSingleThreadExecutor();
+        auebGraph = new AuebGraph();
 
         ObjectDetectorOptions options = new ObjectDetectorOptions.Builder()
                 .setDetectorMode(ObjectDetectorOptions.STREAM_MODE)
                 .enableMultipleObjects()
                 .enableClassification()
                 .build();
-
         objectDetector = ObjectDetection.getClient(options);
-        objectDetector = ObjectDetection.getClient(options);
-
-        //  Διαβάζουμε αν ο χρήστης είπε "σκάναρε"
-        isOcrMode = getIntent().getBooleanExtra("ENABLE_OCR", false);
-        //  Αρχικοποιούμε το AI του κειμένου
         textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
 
-        cameraExecutor = Executors.newSingleThreadExecutor();
-        // Αρχικοποιούμε τον Γράφο της ΑΣΟΕΕ
-        auebGraph = new AuebGraph();
-
+        // 3. ΔΙΑΒΑΣΜΑ INTENT
+        isOcrMode = getIntent().getBooleanExtra("ENABLE_OCR", false);
         Intent intent = getIntent();
         startLocation = intent.getStringExtra("START_LOCATION");
         destination = intent.getStringExtra("DESTINATION");
@@ -129,6 +106,13 @@ public class CameraActivity extends AppCompatActivity implements SensorEventList
         if (startLocation == null) startLocation = "Άγνωστο";
         if (destination == null) destination = "Ελεύθερη Περιήγηση";
 
+        // Αρχικοποίηση Αισθητήρα
+        sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+        if (sensorManager != null) {
+            accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        }
+
+        // 4. ΕΛΕΓΧΟΣ ΑΔΕΙΩΝ & ΕΚΚΙΝΗΣΗ
         if (allPermissionsGranted()) {
             startCamera();
             setupTTS();
@@ -139,11 +123,9 @@ public class CameraActivity extends AppCompatActivity implements SensorEventList
 
     private void startCamera() {
         ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(this);
-
         cameraProviderFuture.addListener(() -> {
             try {
                 ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
-
                 Preview preview = new Preview.Builder().build();
                 preview.setSurfaceProvider(viewFinder.getSurfaceProvider());
 
@@ -152,10 +134,8 @@ public class CameraActivity extends AppCompatActivity implements SensorEventList
                         .build();
 
                 imageAnalysis.setAnalyzer(cameraExecutor, this::analyzeImage);
-
                 CameraSelector cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA;
                 cameraProvider.unbindAll();
-
                 cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis);
 
             } catch (ExecutionException | InterruptedException e) {
@@ -166,28 +146,31 @@ public class CameraActivity extends AppCompatActivity implements SensorEventList
 
     @SuppressLint("UnsafeOptInUsageError")
     private void analyzeImage(@NonNull ImageProxy imageProxy) {
+        // 🔥 Αν το TTS δεν είναι ακόμα 100% έτοιμο, προσπερνάμε την ανάλυση των frames για να μην κρασάρει!
+        if (!isTtsReady) {
+            imageProxy.close();
+            return;
+        }
+
         Image mediaImage = imageProxy.getImage();
         if (mediaImage != null) {
             InputImage image = InputImage.fromMediaImage(mediaImage, imageProxy.getImageInfo().getRotationDegrees());
 
-            //  ΑΝ ΕΙΜΑΣΤΕ ΣΕ OCR MODE, ΤΡΕΧΕΙ ΜΟΝΟ ΑΥΤΟ!
             if (isOcrMode) {
                 textRecognizer.process(image)
                         .addOnSuccessListener(visionText -> {
                             String recognizedText = visionText.getText().trim();
                             if (!recognizedText.isEmpty()) {
                                 long currentTime = System.currentTimeMillis();
-                                if (currentTime - lastSpokenTime > 4000) { // 4 δευτερόλεπτα cooldown
-                                    speakText(recognizedText);
+                                if (currentTime - lastSpokenTime > 4000) {
+                                    speakText(recognizedText, false);
                                     lastSpokenTime = currentTime;
                                 }
                             }
                         })
                         .addOnFailureListener(e -> Log.e("MLKit", "Αποτυχία OCR", e))
-                        .addOnCompleteListener(task -> imageProxy.close()); // Κλείνουμε το frame!
-            }
-            //  ΑΛΛΙΩΣ, ΤΡΕΧΕΙ ΜΟΝΟ Η ΑΝΑΓΝΩΡΙΣΗ ΕΜΠΟΔΙΩΝ
-            else {
+                        .addOnCompleteListener(task -> imageProxy.close());
+            } else {
                 int imageWidth = mediaImage.getWidth();
                 int imageHeight = mediaImage.getHeight();
                 float totalImageArea = imageWidth * imageHeight;
@@ -216,7 +199,7 @@ public class CameraActivity extends AppCompatActivity implements SensorEventList
                             if (isCloseObstacleFound) {
                                 long currentTime = System.currentTimeMillis();
                                 if (currentTime - lastSpokenTime > 4000) {
-                                    speakText("Προσοχή. Εμπόδιο. " + labelToSpeak);
+                                    speakText("Προσοχή. Εμπόδιο. " + labelToSpeak, false);
                                     lastSpokenTime = currentTime;
                                 }
                             } else {
@@ -224,7 +207,7 @@ public class CameraActivity extends AppCompatActivity implements SensorEventList
                             }
                         })
                         .addOnFailureListener(e -> Log.e("MLKit", "Αποτυχία Εμποδίων", e))
-                        .addOnCompleteListener(task -> imageProxy.close()); // Κλείνουμε το frame!
+                        .addOnCompleteListener(task -> imageProxy.close());
             }
         }
     }
@@ -241,25 +224,17 @@ public class CameraActivity extends AppCompatActivity implements SensorEventList
     }
 
     private boolean allPermissionsGranted() {
-        boolean cameraGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
-        boolean activityGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED;
-        return cameraGranted && activityGranted;
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
     }
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == CAMERA_PERMISSION_CODE) {
-            if (allPermissionsGranted()) {
-                startCamera();
-                setupTTS();
-
-                // Το πιο σημαντικό: Ενεργοποιούμε τον σένσορα ΑΦΟΥ μας δώσει την άδεια
-                if (sensorManager != null && stepDetectorSensor != null) {
-                    sensorManager.registerListener(this, stepDetectorSensor, SensorManager.SENSOR_DELAY_FASTEST);
-                }
-            } else {
-                Toast.makeText(this, "Οι άδειες Κάμερας και Δραστηριότητας είναι απαραίτητες!", Toast.LENGTH_LONG).show();
+        if (requestCode == CAMERA_PERMISSION_CODE && allPermissionsGranted()) {
+            startCamera();
+            setupTTS();
+            if (sensorManager != null && accelerometerSensor != null) {
+                sensorManager.registerListener(this, accelerometerSensor, SensorManager.SENSOR_DELAY_FASTEST);
             }
         }
     }
@@ -267,81 +242,92 @@ public class CameraActivity extends AppCompatActivity implements SensorEventList
     private void setupTTS() {
         tts = new TextToSpeech(this, status -> {
             if (status == TextToSpeech.SUCCESS) {
-                tts.setLanguage(new Locale("el", "GR"));
+                int result = tts.setLanguage(new Locale("el", "GR"));
+                if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
+                    float speed = getSharedPreferences("AuebNavPrefs", MODE_PRIVATE).getFloat("tts_speed", 1.0f);
+                    tts.setSpeechRate(speed);
 
-                //  ΕΔΩ ΕΙΝΑΙ Η ΕΝΣΩΜΑΤΩΣΗ ΤΗΣ ΤΑΧΥΤΗΤΑΣ:
-                float speed = getSharedPreferences("AuebNavPrefs", MODE_PRIVATE).getFloat("tts_speed", 1.0f);
-                tts.setSpeechRate(speed);
+                    isTtsReady = true; // ✅ Το TTS είναι πλέον 100% ασφαλές για χρήση!
 
-                startNavigationSequence();
+                    // 🔥 Δίνουμε ένα μικρό εικονικό delay 300ms για να προλάβει το Android OS να κάνει bind το engine
+                    new Handler(Looper.getMainLooper()).postDelayed(this::startNavigationSequence, 300);
+                }
             }
         });
     }
 
     private void startNavigationSequence() {
-        // Ζητάμε από τον Γράφο να βρει τη διαδρομή με τον Α*
+        // Αν ο χρήστης μπήκε απλά για ελεύθερη περιήγηση ή OCR, μην τρέχεις τον Α*!
+        if (destination.equals("Ελεύθερη Περιήγηση") || isOcrMode) {
+            if (isOcrMode) {
+                speakText("Λειτουργία σάρωσης κειμένου ενεργή.", true);
+            } else {
+                speakText("Ελεύθερη περιήγηση ενεργή. Ανίχνευση εμποδίων στο προσκήνιο.", true);
+            }
+            isNavigating = false;
+            return;
+        }
+
         currentPath = auebGraph.findPathAStar(startLocation, destination);
 
         if (currentPath == null || currentPath.isEmpty()) {
-            speakText("Συγγνώμη, δεν βρέθηκε διαδρομή από το σημείο " + startLocation + " προς το σημείο " + destination);
+            speakText("Συγγνώμη, δεν βρέθηκε διαδρομή από το σημείο " + startLocation + " προς το σημείο " + destination, true);
+            isNavigating = false;
             return;
         }
 
         isNavigating = true;
         currentEdgeIndex = 0;
 
-        // Διαβάζουμε την 1η οδηγία και τη συνδυάζουμε με το αρχικό μήνυμα
         AuebGraph.Edge firstEdge = currentPath.get(currentEdgeIndex);
         targetSteps = firstEdge.steps;
         currentSteps = 0;
 
-        speakText("Η διαδρομή υπολογίστηκε. Ξεκινάμε. " + firstEdge.instruction);
-
-        currentEdgeIndex++; // Προχωράμε τον δείκτη για την επόμενη κλήση
+        speakText("Η διαδρομή υπολογίστηκε. Ξεκινάμε. " + firstEdge.instruction, true);
+        currentEdgeIndex++;
     }
 
     private void startNextLeg() {
-        // Έλεγχος αν φτάσαμε στο τέλος της λίστας οδηγιών
         if (currentEdgeIndex >= currentPath.size()) {
             isNavigating = false;
-
-            // Δόνηση για επιβεβαίωση άφιξης
             if (vibrator != null && vibrator.hasVibrator()) {
                 vibrator.vibrate(1000);
             }
-
-            speakText("Έφτασες στον τελικό προορισμό σου: " + destination);
+            speakText("Έφτασες στον τελικό προορισμό σου: " + destination, true);
             return;
         }
 
-        // Εντοπισμός του κόμβου στον οποίο μόλις έφτασε ο χρήστης
         String justReachedNode = currentPath.get(currentEdgeIndex - 1).targetNode;
-
-        // Διαβάζουμε την επόμενη ακμή/οδηγία
         AuebGraph.Edge nextEdge = currentPath.get(currentEdgeIndex);
         targetSteps = nextEdge.steps;
         currentSteps = 0;
 
-        // Συνδυάζουμε την ενημέρωση άφιξης με την επόμενη οδηγία
-        speakText("Βρίσκεσαι στο σημείο " + justReachedNode + ". " + nextEdge.instruction);
-
+        speakText("Βρίσκεσαι στο σημείο " + justReachedNode + ". " + nextEdge.instruction, true);
         currentEdgeIndex++;
     }
 
-    //  FIX 2: Έκλεισα τη μέθοδο speakText κανονικά!
-    private void speakText(String text) {
-        if (tts != null) {
-            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
+    private void speakText(String text, boolean isPriority) {
+        // 🔥 Απόλυτο null-check και ready-check για προστασία από crashes
+        if (tts != null && isTtsReady) {
+            try {
+                if (isPriority) {
+                    tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
+                } else {
+                    if (!tts.isSpeaking()) {
+                        tts.speak(text, TextToSpeech.QUEUE_ADD, null, null);
+                    }
+                }
+            } catch (Exception e) {
+                Log.e("TTS_Error", "Αποτυχία εκφώνησης: " + e.getMessage());
+            }
         }
     }
-
-    // --- ΚΩΔΙΚΑΣ ΒΗΜΑΤΟΜΕΤΡΗΤΗ ---
 
     @Override
     protected void onResume() {
         super.onResume();
-        if (sensorManager != null && stepDetectorSensor != null) {
-            sensorManager.registerListener(this, stepDetectorSensor, SensorManager.SENSOR_DELAY_FASTEST);
+        if (sensorManager != null && accelerometerSensor != null) {
+            sensorManager.registerListener(this, accelerometerSensor, SensorManager.SENSOR_DELAY_FASTEST);
         }
     }
 
@@ -355,25 +341,34 @@ public class CameraActivity extends AppCompatActivity implements SensorEventList
 
     @Override
     public void onSensorChanged(SensorEvent event) {
-        if (event.sensor.getType() == Sensor.TYPE_STEP_DETECTOR && isNavigating) {
-            currentSteps++;
-            Log.d("Pedometer", "Βήμα: " + currentSteps + " / " + targetSteps);
+        if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER && isNavigating) {
+            float x = event.values[0];
+            float y = event.values[1];
+            float z = event.values[2];
 
-            // Αν ολοκληρώσαμε αυτό το "κομμάτι" της διαδρομής (ένα Edge)
-            if (currentSteps == targetSteps) {
-                // Φωνάζουμε την επόμενη οδηγία! (Αν δεν έχει άλλη, θα πει "έφτασες")
-                startNextLeg();
-            }
-            else if (currentSteps % 5 == 0) {
-                // Κάθε 5 βήματα υπενθύμιση
-                speakText("Ακόμα " + (targetSteps - currentSteps) + " βήματα.");
+            double magnitude = Math.sqrt(x * x + y * y + z * z);
+            long currentTime = System.currentTimeMillis();
+
+            if (magnitude > 12.2 && (currentTime - lastStepTime > 450)) {
+                lastStepTime = currentTime;
+                currentSteps++;
+                Log.d("Pedometer", "Βήμα (Acc): " + currentSteps + " / " + targetSteps);
+
+                if (vibrator != null && vibrator.hasVibrator()) {
+                    vibrator.vibrate(50);
+                }
+
+                if (currentSteps == targetSteps) {
+                    startNextLeg();
+                } else if (currentSteps % 5 == 0) {
+                    speakText("Ακόμα " + (targetSteps - currentSteps) + " βήματα.", false);
+                }
             }
         }
     }
 
     @Override
-    public void onAccuracyChanged(Sensor sensor, int accuracy) {
-    }
+    public void onAccuracyChanged(Sensor sensor, int accuracy) {}
 
     @Override
     protected void onDestroy() {
