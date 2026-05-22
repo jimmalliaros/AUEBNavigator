@@ -234,17 +234,34 @@ public class MainActivity extends AppCompatActivity {
     //  Η καρδιά του συστήματος. Επιστρέφει true αν βρήκε εντολή.
     private boolean checkAndExecuteCommand(String spokenText) {
         if (isWaitingForLocation) {
-            if (spokenText.contains("ναι") || spokenText.contains("κεφαλόσκαλο") || spokenText.contains("σκάλα")) {
-                currentLocation = "Κεφαλόσκαλο";
+            // Περίπτωση 1: Ο χρήστης είναι στο Ισόγειο (Κεντρική Είσοδος)
+            if (spokenText.contains("είσοδο") || spokenText.contains("εισοδο") || spokenText.contains("ισόγειο")) {
+                currentLocation = "Κεντρική Είσοδος"; // Το νέο node που βάλαμε στον 3D γράφο!
                 isWaitingForLocation = false;
-                speakText("Τέλεια. Ξεκινάμε την πλοήγηση για την αίθουσα " + pendingDestination + ".");
+                speakText("Τέλεια. Ξεκινάμε την πλοήγηση από την είσοδο για την αίθουσα " + pendingDestination + ".");
+
                 Intent intent = new Intent(MainActivity.this, CameraActivity.class);
                 intent.putExtra("START_LOCATION", currentLocation);
                 intent.putExtra("DESTINATION", pendingDestination);
                 pendingDestination = null;
                 closeMicAndNavigate(intent);
                 return true;
-            } else if (spokenText.contains("όχι") || spokenText.contains("οχι")) {
+            }
+            // Περίπτωση 2: Ο χρήστης είναι στον 1ο Όροφο (Κεφαλόσκαλο)
+            else if (spokenText.contains("ναι") || spokenText.contains("κεφαλόσκαλο") || spokenText.contains("σκάλα")) {
+                currentLocation = "Κεφαλόσκαλο";
+                isWaitingForLocation = false;
+                speakText("Τέλεια. Ξεκινάμε την πλοήγηση από το κεφαλόσκαλο για την αίθουσα " + pendingDestination + ".");
+
+                Intent intent = new Intent(MainActivity.this, CameraActivity.class);
+                intent.putExtra("START_LOCATION", currentLocation);
+                intent.putExtra("DESTINATION", pendingDestination);
+                pendingDestination = null;
+                closeMicAndNavigate(intent);
+                return true;
+            }
+            // Περίπτωση 3: Ακύρωση
+            else if (spokenText.contains("όχι") || spokenText.contains("οχι") || spokenText.contains("άκυρο")) {
                 speakText("Εντάξει, η πλοήγηση ακυρώθηκε.");
                 isWaitingForLocation = false;
                 pendingDestination = null;
