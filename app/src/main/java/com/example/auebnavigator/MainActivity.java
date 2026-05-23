@@ -289,8 +289,25 @@ public class MainActivity extends AppCompatActivity {
             if (spokenText.contains("τ 101") || spokenText.contains("101")) destination = "T101";
             else if (spokenText.contains("τ 102") || spokenText.contains("102")) destination = "T102";
             else if (spokenText.contains("τ 103") || spokenText.contains("103")) destination = "T103";
-            else if (spokenText.contains("τουαλέτες") || spokenText.contains("τουαλετες")) destination = "Τουαλέτες";
-            else if (spokenText.contains("ασανσέρ") || spokenText.contains("ασανσερ")) destination = "Ασανσέρ";
+
+                //  ΕΞΥΠΝΟ MAPPING ΓΙΑ ΤΟΥΑΛΕΤΕΣ
+            else if (spokenText.contains("τουαλέτες") || spokenText.contains("τουαλετες")) {
+                if (spokenText.contains("ισόγειο") || spokenText.contains("ισογείου")) {
+                    destination = "Τουαλέτες Ισόγειο"; // Node ισογείου
+                } else {
+                    destination = "Τουαλέτες"; // Node 1ου ορόφου
+                }
+            }
+
+            //  ΕΞΥΠΝΟ MAPPING ΓΙΑ ΑΣΑΝΣΕΡ
+            else if (spokenText.contains("ασανσέρ") || spokenText.contains("ασανσερ")) {
+                if (spokenText.contains("ισόγειο") || spokenText.contains("ισογείου")) {
+                    destination = "Ασανσέρ Ισόγειο"; // Node ισογείου
+                } else {
+                    destination = "Ασανσέρ"; // Node 1ου ορόφου
+                }
+            }
+
             else if (spokenText.contains("έξοδο κινδύνου") || spokenText.contains("εξοδο κινδυνου")) destination = "Έξοδος Κινδύνου";
 
             if (destination != null) {

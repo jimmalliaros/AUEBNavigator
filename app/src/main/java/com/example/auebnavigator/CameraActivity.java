@@ -47,7 +47,7 @@ public class CameraActivity extends AppCompatActivity implements SensorEventList
 
     private Vibrator vibrator;
     private TextToSpeech tts;
-    private boolean isTtsReady = false; // 🔥 ΦΛΑΓΚ ΑΣΦΑΛΕΙΑΣ: Για να ξέρουμε πότε είναι 100% έτοιμο το TTS
+    private boolean isTtsReady = false; //  ΦΛΑΓΚ ΑΣΦΑΛΕΙΑΣ: Για να ξέρουμε πότε είναι 100% έτοιμο το TTS
 
     private String startLocation;
     private String destination;
