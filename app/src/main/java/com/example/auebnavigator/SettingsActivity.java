@@ -95,12 +95,12 @@ public class SettingsActivity extends AppCompatActivity {
 
                 if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 120 && Math.abs(velocityX) > 120) {
                     if (diffX < 0) {
-                        // Swipe Αριστερά: Πάμε Main
-                        startActivity(new Intent(SettingsActivity.this, MainActivity.class));
+                        // Swipe Αριστερά προς δεξιά: Πάμε Main
+                        startActivity(new Intent(SettingsActivity.this, CameraActivity.class));
                         finish();
                     } else {
-                        // Swipe Δεξιά: Πάμε Camera
-                        startActivity(new Intent(SettingsActivity.this, CameraActivity.class));
+                        // Swipe Δεξιά προς αριστερά: Πάμε Camera
+                        startActivity(new Intent(SettingsActivity.this, MainActivity.class));
                         finish();
                     }
                     return true;

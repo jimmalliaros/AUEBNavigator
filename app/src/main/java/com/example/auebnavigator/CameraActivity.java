@@ -1,10 +1,13 @@
 package com.example.auebnavigator;
 
 import android.Manifest;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.hardware.SensorManager;
 import android.os.Bundle;
+import android.view.GestureDetector;
+import android.view.MotionEvent;
 import android.view.View;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
@@ -15,6 +18,7 @@ import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.view.GestureDetectorCompat;
 import com.google.common.util.concurrent.ListenableFuture;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -51,6 +55,9 @@ public class CameraActivity extends AppCompatActivity implements
     private Runnable volumeDownSingleTapRunnable;
     private static final int VOLUME_DOUBLE_PRESS_INTERVAL = 450; // ms ανοχής μεταξύ δύο πατημάτων
 
+    // --- Πλοήγηση με σύρσιμο δαχτύλου (swipe) ---
+    private GestureDetectorCompat gestureDetector;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -60,6 +67,38 @@ public class CameraActivity extends AppCompatActivity implements
         ocrFocusOverlay = findViewById(R.id.ocrFocusOverlay);
 
         vibrator = (android.os.Vibrator) getSystemService(VIBRATOR_SERVICE);
+
+        // --- ΛΟΓΙΚΗ GESTURES (ίδιο Swipe με Main/Settings) ---
+        // Αριστερά προς δεξιά: Πάμε Ρυθμίσεις. Δεξιά προς αριστερά: Πάμε Αρχική.
+        gestureDetector = new GestureDetectorCompat(this, new GestureDetector.SimpleOnGestureListener() {
+            @Override
+            public boolean onDown(MotionEvent e) {
+                return true;
+            }
+
+            @Override
+            public boolean onFling(MotionEvent e1, @NonNull MotionEvent e2, float velocityX, float velocityY) {
+                if (e1 == null || e2 == null) return false;
+                float diffX = e2.getX() - e1.getX();
+                float diffY = e2.getY() - e1.getY();
+
+                if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 120 && Math.abs(velocityX) > 120) {
+                    if (diffX > 0) {
+                        // Swipe Αριστερά προς δεξιά: Πάμε Ρυθμίσεις
+                        if (vibrator != null && vibrator.hasVibrator()) vibrator.vibrate(30);
+                        startActivity(new Intent(CameraActivity.this, SettingsActivity.class));
+                        finish();
+                    } else {
+                        // Swipe Δεξιά προς αριστερά: Πάμε Αρχική
+                        if (vibrator != null && vibrator.hasVibrator()) vibrator.vibrate(30);
+                        startActivity(new Intent(CameraActivity.this, MainActivity.class));
+                        finish();
+                    }
+                    return true;
+                }
+                return false;
+            }
+        });
 
         cameraExecutor = Executors.newSingleThreadExecutor();
         auebGraph = new AuebGraph();
@@ -189,7 +228,7 @@ public class CameraActivity extends AppCompatActivity implements
         // Πάνω κουμπί: επιστροφή στην αρχική οθόνη (μικρόφωνο)
         if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP && event.getRepeatCount() == 0) {
             if (vibrator != null && vibrator.hasVibrator()) vibrator.vibrate(30);
-            startActivity(new android.content.Intent(CameraActivity.this, MainActivity.class));
+            startActivity(new Intent(CameraActivity.this, MainActivity.class));
             finish();
             return true;
         }
@@ -221,7 +260,7 @@ public class CameraActivity extends AppCompatActivity implements
             }
             lastVolumeDownTime = 0;
             if (vibrator != null && vibrator.hasVibrator()) vibrator.vibrate(30);
-            startActivity(new android.content.Intent(CameraActivity.this, SettingsActivity.class));
+            startActivity(new Intent(CameraActivity.this, SettingsActivity.class));
             finish();
         } else {
             // Μονό πάτημα: είμαστε ήδη στην Κάμερα, οπότε αναμένουμε μόνο για τυχόν δεύτερο πάτημα.
@@ -229,6 +268,14 @@ public class CameraActivity extends AppCompatActivity implements
             volumeDownSingleTapRunnable = () -> volumeDownSingleTapRunnable = null;
             volumeNavHandler.postDelayed(volumeDownSingleTapRunnable, VOLUME_DOUBLE_PRESS_INTERVAL);
         }
+    }
+
+    // Τροφοδοτούμε τον gesture detector από εδώ, ώστε το swipe να πιάνεται αξιόπιστα
+    // πάνω από την προεπισκόπηση της κάμερας (που γεμίζει όλη την οθόνη).
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        if (gestureDetector != null) gestureDetector.onTouchEvent(event);
+        return super.dispatchTouchEvent(event);
     }
 
     @Override

@@ -316,11 +316,13 @@ public class MainActivity extends AppCompatActivity {
 
             if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 100 && Math.abs(velocityX) > 100) {
                 if (diffX > 0) {
-                    if (vibrator != null && vibrator.hasVibrator()) vibrator.vibrate(30);
-                    startActivity(new Intent(MainActivity.this, SettingsActivity.class));
-                } else {
+                    // Swipe Αριστερά προς δεξιά: Πάμε camera
                     if (vibrator != null && vibrator.hasVibrator()) vibrator.vibrate(30);
                     startActivity(new Intent(MainActivity.this, CameraActivity.class));
+                } else {
+                    // Swipe Δεξιά προς αριστερά: Πάμε Settings
+                    if (vibrator != null && vibrator.hasVibrator()) vibrator.vibrate(30);
+                    startActivity(new Intent(MainActivity.this, SettingsActivity.class));
                 }
                 return true;
             }
