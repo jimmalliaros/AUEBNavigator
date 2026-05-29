@@ -57,4 +57,6 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)
     androidTestImplementation(libs.espresso.core)
+    // Η βιβλιοθήκη για να τεστάρουμε τα Intents (αλλαγές οθόνης)
+    androidTestImplementation("androidx.test.espresso:espresso-intents:3.5.1")
 }
