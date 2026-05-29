@@ -33,7 +33,7 @@ android {
 
 dependencies {
     // CameraX core library using the camera2 implementation
-    val camerax_version = "1.3.1" // Έβαλα και μια πιο καινούργια σταθερή έκδοση
+    val camerax_version = "1.3.1"
     implementation("androidx.camera:camera-core:$camerax_version")
     implementation("androidx.camera:camera-camera2:$camerax_version")
     implementation("androidx.camera:camera-lifecycle:$camerax_version")
@@ -42,15 +42,19 @@ dependencies {
     // Google ML Kit for Object Detection
     implementation("com.google.mlkit:object-detection:17.0.0")
 
+    // Google ML Kit for Text Recognition (OCR - Latin)
+    implementation("com.google.mlkit:text-recognition:16.0.0")
+    // Google ML Kit Translation API
+    implementation("com.google.mlkit:translate:17.0.1")
+
+    // AndroidX & Material Libraries
     implementation(libs.appcompat)
     implementation(libs.material)
     implementation(libs.activity)
     implementation(libs.constraintlayout)
+
+    // Testing Libraries
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)
     androidTestImplementation(libs.espresso.core)
-
-    implementation("com.google.mlkit:object-detection:17.0.0")
-    //  Η βιβλιοθήκη για το διάβασμα κειμένου (OCR)
-    implementation("com.google.mlkit:text-recognition:16.0.0")
 }

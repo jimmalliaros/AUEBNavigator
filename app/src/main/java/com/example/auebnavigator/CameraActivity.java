@@ -1,13 +1,11 @@
 package com.example.auebnavigator;
 
 import android.Manifest;
-import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.hardware.SensorManager;
 import android.os.Bundle;
-import android.util.Log;
-import android.widget.TextView;
+import android.view.View;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.camera.core.CameraSelector;
@@ -23,21 +21,28 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class CameraActivity extends AppCompatActivity implements StepDetector.StepListener, ObstacleAnalyzer.ObstacleListener {
+public class CameraActivity extends AppCompatActivity implements
+        StepDetector.StepListener,
+        ObstacleAnalyzer.ObstacleListener,
+        AuebTextRecognizer.OcrListener {
 
     private PreviewView viewFinder;
-    private TextView tvObstacleInfo;
-    private ExecutorService cameraExecutor;
+    private OcrFocusOverlayView ocrFocusOverlay;
 
+    private ExecutorService cameraExecutor;
     private SensorManager sensorManager;
     private StepDetector stepDetector;
     private VoiceManager voiceManager;
+    private AuebTextRecognizer textRecognizerAnalyzer;
 
     private AuebGraph auebGraph;
     private List<AuebGraph.Edge> currentPath;
     private int currentEdgeIndex = 0;
+
+    private String startLocation;
     private String destination;
     private long lastSpokenTime = 0;
+    private boolean isOcrMode = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -45,26 +50,38 @@ public class CameraActivity extends AppCompatActivity implements StepDetector.St
         setContentView(R.layout.activity_camera);
 
         viewFinder = findViewById(R.id.viewFinder);
-        tvObstacleInfo = findViewById(R.id.textView);
+        ocrFocusOverlay = findViewById(R.id.ocrFocusOverlay);
+
         cameraExecutor = Executors.newSingleThreadExecutor();
         auebGraph = new AuebGraph();
 
-        // Intent Data
-        String startLocation = getIntent().getStringExtra("START_LOCATION");
+        isOcrMode = getIntent().getBooleanExtra("ENABLE_OCR", false);
+        startLocation = getIntent().getStringExtra("START_LOCATION");
         destination = getIntent().getStringExtra("DESTINATION");
 
-        // Αρχικοποίηση Components
+        if (startLocation == null) startLocation = "Άγνωστο";
+        if (destination == null) destination = "Ελεύθερη Περιήγηση";
+
+        if (isOcrMode) {
+            ocrFocusOverlay.setVisibility(View.VISIBLE);
+        }
+
         stepDetector = new StepDetector(this, this);
         sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
 
         voiceManager = VoiceManager.getInstance(this, () -> {
-            // Μόλις η φωνή είναι έτοιμη, ξεκινάει ο Α*
-            currentPath = auebGraph.findPathAStar(startLocation, destination);
-            if (currentPath != null && !currentPath.isEmpty()) {
-                AuebGraph.Edge firstEdge = currentPath.get(0);
-                stepDetector.startNavigation(firstEdge.steps);
-                voiceManager.speak("Η διαδρομή υπολογίστηκε. " + firstEdge.instruction, true);
-                currentEdgeIndex = 1;
+            if (isOcrMode) {
+                voiceManager.speak("Λειτουργία σάρωσης κειμένου. Κεντράρισε την ταμπέλα στο κόκκινο τετράγωνο.", true);
+            } else if (destination.equals("Ελεύθερη Περιήγηση")) {
+                voiceManager.speak("Ελεύθερη περιήγηση ενεργή.", true);
+            } else {
+                currentPath = auebGraph.findPathAStar(startLocation, destination);
+                if (currentPath != null && !currentPath.isEmpty()) {
+                    AuebGraph.Edge firstEdge = currentPath.get(0);
+                    stepDetector.startNavigation(firstEdge.steps);
+                    voiceManager.speak("Ξεκινάμε. " + firstEdge.instruction, true);
+                    currentEdgeIndex = 1;
+                }
             }
         });
 
@@ -87,50 +104,61 @@ public class CameraActivity extends AppCompatActivity implements StepDetector.St
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build();
 
-                imageAnalysis.setAnalyzer(cameraExecutor, new ObstacleAnalyzer(this));
+                if (isOcrMode) {
+                    textRecognizerAnalyzer = new AuebTextRecognizer(this);
+                    imageAnalysis.setAnalyzer(cameraExecutor, textRecognizerAnalyzer);
+                } else {
+                    imageAnalysis.setAnalyzer(cameraExecutor, new ObstacleAnalyzer(this));
+                }
 
                 cameraProvider.unbindAll();
                 cameraProvider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageAnalysis);
             } catch (ExecutionException | InterruptedException e) {
-                Log.e("CameraX", "Error static camera binding", e);
+                // Αγνοούμε τα logs
             }
         }, ContextCompat.getMainExecutor(this));
     }
 
-    // --- INTERFACE IMPLEMENTATIONS ---
-
     @Override
     public void onStepCounted(int currentSteps) {
-        if (currentSteps % 5 == 0) {
-            voiceManager.speak("Ακόμα " + currentSteps + " βήματα.", false);
-        }
+        if (currentSteps % 5 == 0) voiceManager.speak("Ακόμα " + currentSteps + " βήματα.", false);
     }
 
     @Override
     public void onTargetStepsReached() {
-        if (currentEdgeIndex >= currentPath.size()) {
+        if (currentPath == null || currentEdgeIndex >= currentPath.size()) {
+            stepDetector.stopNavigation();
             voiceManager.speak("Έφτασες στον προορισμό σου: " + destination, true);
             return;
         }
         AuebGraph.Edge nextEdge = currentPath.get(currentEdgeIndex);
         stepDetector.startNavigation(nextEdge.steps);
-        voiceManager.speak("Στάση: " + nextEdge.instruction, true);
+        voiceManager.speak("Στάση. " + nextEdge.instruction, true);
         currentEdgeIndex++;
     }
 
     @Override
     public void onObstacleDetected(String label, float coveragePercentage) {
-        runOnUiThread(() -> tvObstacleInfo.setText("Κοντινό Εμπόδιο: " + label));
         long currentTime = System.currentTimeMillis();
         if (currentTime - lastSpokenTime > 4000) {
-            voiceManager.speak("Προσοχή εμπόδιο " + label, false);
+            voiceManager.speak("Εμπόδιο: " + label, false);
             lastSpokenTime = currentTime;
         }
     }
 
     @Override
     public void onPathClear() {
-        runOnUiThread(() -> tvObstacleInfo.setText("Πορεία Καθαρή"));
+        // Δεν χρειάζεται να λέει κάτι
+    }
+
+    @Override
+    public void onTextRecognizedAndTranslated(String greekText) {
+        long currentTime = System.currentTimeMillis();
+        // Μιλάει μόνο κάθε 4 δευτερόλεπτα για να μην σπαμάρει
+        if (currentTime - lastSpokenTime > 4000) {
+            voiceManager.speak(greekText, false);
+            lastSpokenTime = currentTime;
+        }
     }
 
     @Override
@@ -151,5 +179,6 @@ public class CameraActivity extends AppCompatActivity implements StepDetector.St
     protected void onDestroy() {
         super.onDestroy();
         cameraExecutor.shutdown();
+        if (textRecognizerAnalyzer != null) textRecognizerAnalyzer.close();
     }
 }
