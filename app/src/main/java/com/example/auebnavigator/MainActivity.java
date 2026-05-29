@@ -28,6 +28,9 @@ import java.util.ArrayList;
 
 public class MainActivity extends AppCompatActivity {
 
+    private static final float NOISE_THRESHOLD_DB = 5.0f; // Το κατώφλι των decibel. Παίξε με αυτό!
+    private long lastSpeechTime = 0;
+    private static final long SILENCE_TIMEOUT_MS = 1500; // 1.5 δευτερόλεπτο ησυχίας για να "κόψει"
     private String currentLocation = null;
     private boolean isWaitingForLocation = false;
     private String pendingDestination = null;
@@ -192,9 +195,27 @@ public class MainActivity extends AppCompatActivity {
             public void onReadyForSpeech(Bundle params) {
                 btnMic.startAnimation(pulseAnim);
                 toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 150);
+                lastSpeechTime = System.currentTimeMillis(); // Αρχικοποιούμε τον χρόνο
             }
             @Override public void onBeginningOfSpeech() { }
-            @Override public void onRmsChanged(float rmsdB) { }
+            @Override
+            public void onRmsChanged(float rmsdB) {
+                // Εκτυπώνουμε το επίπεδο θορύβου στο Logcat για να το μελετήσουμε!
+                Log.d("AudioLevel", "Τρέχον dB: " + rmsdB);
+
+                // Αν ο ήχος είναι πιο δυνατός από το όριό μας, ανανεώνουμε το χρονόμετρο
+                if (rmsdB > NOISE_THRESHOLD_DB) {
+                    lastSpeechTime = System.currentTimeMillis();
+                } else {
+                    // Αν έχει πέσει ησυχία για πάνω από τον χρόνο που ορίσαμε
+                    if (System.currentTimeMillis() - lastSpeechTime > SILENCE_TIMEOUT_MS) {
+                        if (speechRecognizer != null && !isProcessingCommand) {
+                            // Κλείνουμε το μικρόφωνο
+                            speechRecognizer.stopListening();
+                        }
+                    }
+                }
+            }
             @Override public void onBufferReceived(byte[] buffer) { }
             @Override public void onEndOfSpeech() { btnMic.clearAnimation(); }
             @Override
