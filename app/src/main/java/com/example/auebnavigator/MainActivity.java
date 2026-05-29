@@ -111,7 +111,7 @@ public class MainActivity extends AppCompatActivity {
                 if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
                     float speed = getSharedPreferences("AuebNavPrefs", MODE_PRIVATE).getFloat("tts_speed", 1.0f);
                     tts.setSpeechRate(speed);
-                    speakText("To σύστημα πλοήγησης είναι έτοιμο!.");
+                    speakText("To σύστημα πλοήγησης είναι έτοιμο!");
                 }
             }
         });
@@ -158,7 +158,7 @@ public class MainActivity extends AppCompatActivity {
     private void handleMicClick() {
         if (vibrator != null && vibrator.hasVibrator()) vibrator.vibrate(50);
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            startListeningNow();
+            startListeningNow(); // κλήση startListeningNow για να γίνει setup ο SpeechRecognizer
         } else {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, RECORD_AUDIO_PERMISSION_CODE);
         }
@@ -245,7 +245,7 @@ public class MainActivity extends AppCompatActivity {
                 if (isProcessingCommand) return;
                 ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                 if (matches != null && !matches.isEmpty()) {
-                    checkAndExecuteCommand(matches.get(0).toLowerCase());
+                    checkAndExecuteCommand(matches.get(0).toLowerCase()); // "γέφυρα" SpeechRecognizer και tts, το αποτέλεσμα αυτού που άκουσε ο SpeechRecognizer στέλνεται στον tts για να παράξει απάντηση (μέθοδος checkAndExecuteCommand() )
                 }
             }
             @Override public void onEvent(int eventType, Bundle params) { }
