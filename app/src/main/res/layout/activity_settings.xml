@@ -4,7 +4,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#0D1B2A">
+    android:background="#0A0A0A">
 
     <LinearLayout
         android:id="@+id/header"
@@ -68,7 +68,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:background="#162534"
+            android:background="#1C1C1C"
             android:padding="16dp"
             android:gravity="center_vertical"
             android:layout_marginBottom="24dp">
@@ -122,7 +122,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:background="#162534"
+            android:background="#1C1C1C"
             android:padding="16dp"
             android:gravity="center_vertical"
             android:layout_marginBottom="24dp">
@@ -178,7 +178,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:background="#162534"
+            android:background="#1C1C1C"
             android:padding="16dp"
             android:gravity="center_vertical">
 
@@ -237,7 +237,7 @@
         android:layout_width="match_parent"
         android:layout_height="70dp"
         android:orientation="horizontal"
-        android:background="#162534"
+        android:background="#1C1C1C"
         android:gravity="center"
         app:layout_constraintBottom_toBottomOf="parent">
 

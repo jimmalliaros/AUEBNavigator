@@ -4,7 +4,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#0D1B2A">
+    android:background="#0A0A0A">
 
     <LinearLayout
         android:id="@+id/header"
@@ -55,7 +55,7 @@
             android:layout_height="80dp"
             android:layout_gravity="center"
             android:src="@drawable/ic_mic"
-            app:tint="#0D1B2A" />
+            app:tint="#0A0A0A" />
 
     </FrameLayout>
 
@@ -75,7 +75,7 @@
         android:layout_width="match_parent"
         android:layout_height="70dp"
         android:orientation="horizontal"
-        android:background="#162534"
+        android:background="#1C1C1C"
         android:gravity="center"
         app:layout_constraintBottom_toBottomOf="parent">
 

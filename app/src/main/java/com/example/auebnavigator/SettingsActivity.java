@@ -21,6 +21,12 @@ public class SettingsActivity extends AppCompatActivity {
     private SharedPreferences prefs;
     private GestureDetectorCompat gestureDetector;
 
+    // --- Πλοήγηση με τα πλαϊνά (φυσικά) κουμπιά έντασης ---
+    private long lastVolumeDownTime = 0;
+    private final android.os.Handler volumeNavHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private Runnable volumeDownSingleTapRunnable;
+    private static final int VOLUME_DOUBLE_PRESS_INTERVAL = 450; // ms ανοχής μεταξύ δύο πατημάτων
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -149,6 +155,53 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     @Override
+    public boolean onKeyDown(int keyCode, android.view.KeyEvent event) {
+        // Πάνω κουμπί: επιστροφή στην αρχική οθόνη (μικρόφωνο)
+        if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP && event.getRepeatCount() == 0) {
+            startActivity(new Intent(SettingsActivity.this, MainActivity.class));
+            finish();
+            return true;
+        }
+        // Κάτω κουμπί: 1 πάτημα -> Κάμερα, 2 πατήματα -> (είμαστε ήδη στις Ρυθμίσεις)
+        if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN && event.getRepeatCount() == 0) {
+            handleVolumeDownNavigation();
+            return true;
+        }
+        return super.onKeyDown(keyCode, event);
+    }
+
+    // Καταναλώνουμε και το onKeyUp των κουμπιών έντασης ώστε να μην εμφανίζεται το slider έντασης του συστήματος.
+    @Override
+    public boolean onKeyUp(int keyCode, android.view.KeyEvent event) {
+        if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP || keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN) {
+            return true;
+        }
+        return super.onKeyUp(keyCode, event);
+    }
+
+    // Διαχείριση μονού/διπλού πατήματος του κάτω κουμπιού
+    private void handleVolumeDownNavigation() {
+        long now = System.currentTimeMillis();
+        if (now - lastVolumeDownTime < VOLUME_DOUBLE_PRESS_INTERVAL) {
+            // Διπλό πάτημα: ακυρώνουμε το προγραμματισμένο μονό. Είμαστε ήδη στις Ρυθμίσεις, μένουμε εδώ.
+            if (volumeDownSingleTapRunnable != null) {
+                volumeNavHandler.removeCallbacks(volumeDownSingleTapRunnable);
+                volumeDownSingleTapRunnable = null;
+            }
+            lastVolumeDownTime = 0;
+        } else {
+            // Μονό πάτημα: περιμένουμε λίγο μήπως έρθει δεύτερο, αλλιώς πάμε Κάμερα
+            lastVolumeDownTime = now;
+            volumeDownSingleTapRunnable = () -> {
+                startActivity(new Intent(SettingsActivity.this, CameraActivity.class));
+                finish();
+                volumeDownSingleTapRunnable = null;
+            };
+            volumeNavHandler.postDelayed(volumeDownSingleTapRunnable, VOLUME_DOUBLE_PRESS_INTERVAL);
+        }
+    }
+
+    @Override
     public boolean onTouchEvent(MotionEvent event) {
         return gestureDetector.onTouchEvent(event) || super.onTouchEvent(event);
     }
@@ -156,6 +209,7 @@ public class SettingsActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        volumeNavHandler.removeCallbacksAndMessages(null);
         if (tts != null) {
             tts.stop();
             tts.shutdown();

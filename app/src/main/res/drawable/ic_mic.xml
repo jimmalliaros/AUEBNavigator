@@ -4,7 +4,7 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24"
-    android:tint="#0D1B2A"> <!-- Το σκούρο χρώμα που βάλαμε στο mockup -->
+    android:tint="#0A0A0A"> <!-- Το σκούρο χρώμα που βάλαμε στο mockup -->
 
     <path
         android:fillColor="@android:color/white"
