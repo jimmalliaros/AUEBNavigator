@@ -23,26 +23,30 @@ import com.google.common.util.concurrent.ListenableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+/**
+ CameraActivity is the camera screen of the application
+ */
+
 public class CameraActivity extends AppCompatActivity implements
         StepDetector.StepListener,
         ObstacleAnalyzer.ObstacleListener,
         AuebTextRecognizer.OcrListener {
 
-    private PreviewView viewFinder;
-    private OcrFocusOverlayView ocrFocusOverlay;
-    private ExecutorService cameraExecutor;
-    private SensorManager sensorManager;
-    private StepDetector stepDetector;
+    private PreviewView viewFinder;  //shows the live camera feed
+    private OcrFocusOverlayView ocrFocusOverlay;  //dark overlay with a clear focus window
+    private ExecutorService cameraExecutor;  //background thread for camera analysis
+    private SensorManager sensorManager; //access to device sensors
+    private StepDetector stepDetector;  //step counter from the accelerometer
     private VoiceManager voiceManager;
 
-    // --- Πλοήγηση με τα πλαϊνά (φυσικά) κουμπιά έντασης ---
+    //Navigation using the side (volume) buttons
     private android.os.Vibrator vibrator;
     private long lastVolumeDownTime = 0;
     private final android.os.Handler volumeNavHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private Runnable volumeDownSingleTapRunnable;
-    private static final int VOLUME_DOUBLE_PRESS_INTERVAL = 450; // ms ανοχής μεταξύ δύο πατημάτων
+    private static final int VOLUME_DOUBLE_PRESS_INTERVAL = 450; //ms tolerance between two presses
 
-    // --- Πλοήγηση με σύρσιμο δαχτύλου (swipe) ---
+    //Swipe gesture navigation
     private GestureDetectorCompat gestureDetector;
 
     @Override
@@ -57,8 +61,8 @@ public class CameraActivity extends AppCompatActivity implements
 
         vibrator = (android.os.Vibrator) getSystemService(VIBRATOR_SERVICE);
 
-        // --- ΛΟΓΙΚΗ GESTURES (ίδιο Swipe με Main/Settings) ---
-        // Αριστερά προς δεξιά: Πάμε Ρυθμίσεις. Δεξιά προς αριστερά: Πάμε Αρχική.
+        //Swipe gestures (same scheme as Main/Settings)
+        // Left to right: go to Settings. Right to left: go to Main.
         gestureDetector = new GestureDetectorCompat(this, new GestureDetector.SimpleOnGestureListener() {
             @Override
             public boolean onDown(MotionEvent e) {
@@ -73,12 +77,12 @@ public class CameraActivity extends AppCompatActivity implements
 
                 if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 120 && Math.abs(velocityX) > 120) {
                     if (diffX > 0) {
-                        // Swipe Αριστερά προς δεξιά: Πάμε Ρυθμίσεις
+                        //Swipe left -> right: go to Settings
                         if (vibrator != null && vibrator.hasVibrator()) vibrator.vibrate(30);
                         startActivity(new Intent(CameraActivity.this, SettingsActivity.class));
                         finish();
                     } else {
-                        // Swipe Δεξιά προς αριστερά: Πάμε Αρχική
+                        //Swipe right -> left: go to Main
                         if (vibrator != null && vibrator.hasVibrator()) vibrator.vibrate(30);
                         startActivity(new Intent(CameraActivity.this, MainActivity.class));
                         finish();
@@ -89,14 +93,15 @@ public class CameraActivity extends AppCompatActivity implements
             }
         });
 
-        // Αρχικοποίηση αισθητήρων με try-catch
+        //Sensor setup (guarded with try-catch since not every device behaves the same)
         try {
             sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
-            stepDetector = new StepDetector(this, this);
+            stepDetector = new StepDetector(this, this); //this Activity (the camera) is the StepListener
         } catch (Exception e) {
             Log.e("CameraActivity", "Sensor init failed: " + e.getMessage());
         }
 
+        //Start the camera once we have permission,otherwise request it
         if (allPermissionsGranted()) {
             startCamera();
         } else {
@@ -104,6 +109,7 @@ public class CameraActivity extends AppCompatActivity implements
         }
     }
 
+    // Initialisation of CameraX: binding the preview and an image-analysis use case to this lifecycle
     private void startCamera() {
         ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(this);
 
@@ -111,28 +117,29 @@ public class CameraActivity extends AppCompatActivity implements
             try {
                 ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
 
+                // Live preview shown in the viewFinder
                 Preview preview = new Preview.Builder().build();
                 preview.setSurfaceProvider(viewFinder.getSurfaceProvider());
 
-                // Εδώ συνδέουμε τα analyzers μας
+                //Image analysis use case (keep only the latest frame to stay real-time)
                 ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build();
 
+                // ebind everything to the back camera for this Activity's lifecycle
                 cameraProvider.unbindAll();
                 cameraProvider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageAnalysis);
 
             } catch (Exception e) {
                 Log.e("CameraX", "Binding failure: " + e.getMessage());
                 if (voiceManager != null) {
-                    voiceManager.speak("Συγγνώμη, η κάμερα δεν αποκρίνεται, δοκίμασε ξανά.", true);
+                    voiceManager.speak("Συγγνώμη, η κάμερα δεν ανταποκρίνεται, δοκίμασε ξανά.", true);
                 }
             }
         }, ContextCompat.getMainExecutor(this));
     }
 
-    // Τροφοδοτούμε τον gesture detector από εδώ, ώστε το swipe να πιάνεται αξιόπιστα
-    // πάνω από την προεπισκόπηση της κάμερας (που γεμίζει όλη την οθόνη).
+    // Feed the gesture detector from here so swipes are caught reliably over the full-screen camera preview
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
         if (gestureDetector != null) gestureDetector.onTouchEvent(event);
@@ -141,14 +148,14 @@ public class CameraActivity extends AppCompatActivity implements
 
     @Override
     public boolean onKeyDown(int keyCode, android.view.KeyEvent event) {
-        // Πάνω κουμπί: επιστροφή στην αρχική οθόνη (μικρόφωνο)
+        //Up button pressed: return to main screen
         if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP && event.getRepeatCount() == 0) {
             if (vibrator != null && vibrator.hasVibrator()) vibrator.vibrate(30);
             startActivity(new Intent(CameraActivity.this, MainActivity.class));
             finish();
             return true;
         }
-        // Κάτω κουμπί: 1 πάτημα -> (είμαστε ήδη στην Κάμερα), 2 πατήματα -> Ρυθμίσεις
+        //Down button pressed: 1 press-> Camera, 2 presses -> Settings
         if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN && event.getRepeatCount() == 0) {
             handleVolumeDownNavigation();
             return true;
@@ -156,7 +163,7 @@ public class CameraActivity extends AppCompatActivity implements
         return super.onKeyDown(keyCode, event);
     }
 
-    // Καταναλώνουμε και το onKeyUp των κουμπιών έντασης ώστε να μην εμφανίζεται το slider έντασης του συστήματος.
+    //Also consume the key-up of the volume buttons so the system volume slider doesn't appear
     @Override
     public boolean onKeyUp(int keyCode, android.view.KeyEvent event) {
         if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP || keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN) {
@@ -165,11 +172,11 @@ public class CameraActivity extends AppCompatActivity implements
         return super.onKeyUp(keyCode, event);
     }
 
-    // Διαχείριση μονού/διπλού πατήματος του κάτω κουμπιού
+    //Single/double press of down button handling
     private void handleVolumeDownNavigation() {
         long now = System.currentTimeMillis();
         if (now - lastVolumeDownTime < VOLUME_DOUBLE_PRESS_INTERVAL) {
-            // Διπλό πάτημα: ακυρώνουμε το προγραμματισμένο μονό και πάμε Ρυθμίσεις
+            //Double press: cancel the scheduled single-press action and go to settings screen
             if (volumeDownSingleTapRunnable != null) {
                 volumeNavHandler.removeCallbacks(volumeDownSingleTapRunnable);
                 volumeDownSingleTapRunnable = null;
@@ -179,7 +186,7 @@ public class CameraActivity extends AppCompatActivity implements
             startActivity(new Intent(CameraActivity.this, SettingsActivity.class));
             finish();
         } else {
-            // Μονό πάτημα: είμαστε ήδη στην Κάμερα, οπότε αναμένουμε μόνο για τυχόν δεύτερο πάτημα.
+            //Single press: we're already in Camera, so just wait in case a second press arrives
             lastVolumeDownTime = now;
             volumeDownSingleTapRunnable = () -> volumeDownSingleTapRunnable = null;
             volumeNavHandler.postDelayed(volumeDownSingleTapRunnable, VOLUME_DOUBLE_PRESS_INTERVAL);
@@ -189,7 +196,7 @@ public class CameraActivity extends AppCompatActivity implements
     @Override
     protected void onResume() {
         super.onResume();
-        try {
+        try {  //Start receiving accelerometer updates (for step detection) while visible
             if (sensorManager != null && stepDetector != null) {
                 Sensor accel = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
                 if (accel != null) {
@@ -202,7 +209,7 @@ public class CameraActivity extends AppCompatActivity implements
     }
 
     @Override
-    protected void onPause() {
+    protected void onPause() { //Stop accelerometer updates when the screen is not in the foreground (saves battery)
         super.onPause();
         if (sensorManager != null) {
             sensorManager.unregisterListener(stepDetector);
@@ -222,7 +229,7 @@ public class CameraActivity extends AppCompatActivity implements
         return ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
     }
 
-    // --- Interface Methods (Placeholder για να μην σκάει ο κώδικας) ---
+    //Interface methods (Placeholder for the code to be able to compile)
     @Override public void onStepCounted(int steps) {}
     @Override public void onTargetStepsReached() {}
     @Override public void onObstacleDetected(String label, float coverage) {}

@@ -6,14 +6,18 @@ import android.util.AttributeSet;
 import android.view.View;
 import java.util.List;
 
+/**
+  PathOverlayView class for showing the path between two points
+ **/
+
 public class PathOverlayView extends View {
     private List<AuebGraph.Edge> currentPath;
     private final Paint paint;
 
-    public PathOverlayView(Context context, AttributeSet attrs) {
+    public PathOverlayView(Context context, AttributeSet attrs) { //design of the line between the two points
         super(context, attrs);
         paint = new Paint();
-        paint.setColor(Color.CYAN); // Το χρώμα της γραμμής
+        paint.setColor(Color.CYAN);
         paint.setStrokeWidth(12f);
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeCap(Paint.Cap.ROUND);
@@ -22,7 +26,7 @@ public class PathOverlayView extends View {
 
     public void updatePath(List<AuebGraph.Edge> path) {
         this.currentPath = path;
-        invalidate(); // Ζητάει επανασχεδίαση
+        invalidate(); //path redesign
     }
 
     @Override
@@ -31,12 +35,12 @@ public class PathOverlayView extends View {
         if (currentPath == null || currentPath.isEmpty()) return;
 
         Path path = new Path();
-        // Ξεκινάμε από το κέντρο κάτω (εκεί που είναι ο χρήστης)
+        // Start from the center (where the user is located)
         path.moveTo(getWidth() / 2f, getHeight() * 0.9f);
 
-        // Σχεδιάζουμε τη γραμμή προς τα σημεία
+        // Draw the line to the other point
         for (int i = 0; i < currentPath.size(); i++) {
-            float x = getWidth() / 2f + (i * 50); // Απλοποιημένη προβολή
+            float x = getWidth() / 2f + (i * 50);
             float y = getHeight() * 0.8f - (i * 150);
             path.lineTo(x, y);
             canvas.drawCircle(x, y, 15f, paint);

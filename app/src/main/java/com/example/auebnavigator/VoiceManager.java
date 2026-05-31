@@ -5,20 +5,24 @@ import android.speech.tts.TextToSpeech;
 import android.util.Log;
 import java.util.Locale;
 
+/**
+VoiceManager class is responsible for setting up and managing the TextToSpeech (tts) engine
+**/
+
 public class VoiceManager {
-    private static VoiceManager instance;
-    private TextToSpeech tts;
+    private static VoiceManager instance; //one and only instance of VoiceManager (singleton)
+    private TextToSpeech tts; //TextToSpeech object
     private boolean isReady = false;
 
-    public interface VoiceInitListener {
+    public interface VoiceInitListener { //listener is not exactly used at the moment
         void onVoiceReady();
     }
 
-    public static synchronized VoiceManager getInstance(Context context, VoiceInitListener listener) {
-        if (instance == null) {
+    public static synchronized VoiceManager getInstance(Context context, VoiceInitListener listener) { //synchronized for only one thread to have access at a time
+        if (instance == null) { //no VoiceManager instance exists, create one
             instance = new VoiceManager(context.getApplicationContext(), listener);
         } else {
-            // Αν το instance υπάρχει ήδη, τρέξε το callback για να μην "κολλάει" η ροή
+            //VoiceManager instance already exists
             if (instance.isReady && listener != null) {
                 listener.onVoiceReady();
             }
@@ -28,10 +32,10 @@ public class VoiceManager {
 
     private VoiceManager(Context context, VoiceInitListener listener) {
         try {
-            tts = new TextToSpeech(context, status -> {
-                if (status == TextToSpeech.SUCCESS) {
+            tts = new TextToSpeech(context, status -> { //new tts object
+                if (status == TextToSpeech.SUCCESS) { //tts was initialized successfully
                     int result = tts.setLanguage(new Locale("el", "GR"));
-                    if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
+                    if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) { //language is supported
                         float speed = context.getSharedPreferences("AuebNavPrefs", Context.MODE_PRIVATE).getFloat("tts_speed", 1.0f);
                         tts.setSpeechRate(speed);
                         isReady = true;
@@ -45,24 +49,23 @@ public class VoiceManager {
     }
 
     public void speak(String text, boolean isPriority) {
-        // 🔥 Robust Error Handling: Προστατεύουμε την εφαρμογή από TTS crashes
         try {
             if (tts != null && isReady) {
-                if (isPriority) {
+                if (isPriority) { //text is a priority, speak it now
                     tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
-                } else {
+                } else { //text not a priority, add to queue
                     if (!tts.isSpeaking()) {
                         tts.speak(text, TextToSpeech.QUEUE_ADD, null, null);
                     }
                 }
             }
         } catch (Exception e) {
-            // Αν το TTS engine αποτύχει, το καταγράφουμε στο Logcat και συνεχίζουμε
+            // if tts fails, show it at Logcat (debugging)
             Log.e("VoiceManager", "Speech error: " + e.getMessage());
         }
     }
 
-    public void shutdown() {
+    public void shutdown() { //close tts
         try {
             if (tts != null) {
                 tts.stop();
